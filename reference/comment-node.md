@@ -2,7 +2,9 @@
 
 Markdown 便签，**不执行、不连线**。权威正文是 `parameters.commentMarkdown` 字符串，不要写成 HTML。不要和 `type: "text"` 的 TextNode 搞混。
 
-**默认不加。** 何时才加、坐标随流程 `direction`，见 [flow-json.md](flow-json.md)「批注节点」。下面只列写入画布时要用的字段。
+**默认不加**，每个 HTTP 接口除外：一张批注，正文只有接口说明和访问地址。其余何时才加、坐标随流程 `direction`，见 [flow-json.md](flow-json.md)「批注节点」。下面只列写入画布时要用的字段。
+
+位置按便签自己的宽高留在整图外侧，和节点、分组框空开，不要叠上去：`TB` 时 `x = 最左外缘 - width - 80`，`LR` 时 `y = 最上外缘 - height - 80`。外缘用自由节点和分组框，不用组内子节点。默认 280×160、主链在 x=480 时，批注是 `{ "x": 120, "y": 80 }`。加大宽高后用同一公式重算。
 
 ## 必写字段
 
@@ -29,7 +31,7 @@ Markdown 便签，**不执行、不连线**。权威正文是 `parameters.commen
 
 | 字段 | 用法 |
 |---|---|
-| `commentMarkdown` | GFM 正文。短：`##` 标题 + 一两句或要点 |
+| `commentMarkdown` | GFM 正文。短：`##` 标题 + 一两句或要点。HTTP 接口只用下面两节 |
 | `commentBackground` | 预设 id，默认 `amber` |
 | `commentBackgroundOpacity` | `0.04`–`1`，默认 `0.1` |
 
@@ -45,3 +47,20 @@ Markdown 便签，**不执行、不连线**。权威正文是 `parameters.commen
 - 图片 `![alt](url)`，可带宽度 `![alt](url =24)` 或 `![alt](url =24x24)`
 
 不要把整段改成 HTML。颜色高亮只有画布编辑器会插入 `<span style="color:…;background-color:…">`，编排时一般不必手写。
+
+HTTP 接口的正文用这个形状（方法和 path 跟触发器参数一致；有 `externalHost` / `httpPort` 才写完整 URL，没有就删掉生产和测试两行，改成「完整地址 = 服务器访问地址 + 路径」）：
+
+```markdown
+## 接口说明
+
+按订单号查询订单状态。
+
+## 访问地址
+
+`GET /api/orders/:id`
+
+- 生产：`http://{externalHost}:{httpPort}/api/orders/:id`
+- 测试：`http://{externalHost}:{httpPort}/@test/api/orders/:id`
+```
+
+测试路径是在 path 前加 `/@test`，生产不加。不要编造域名，不要把入站认证再抄进批注。

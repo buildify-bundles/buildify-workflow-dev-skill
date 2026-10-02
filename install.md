@@ -3,27 +3,27 @@ name: buildify-flow-dev-install
 description: >-
   Installs the buildify-flow-dev Agent Skill from GitHub into the correct
   client skills directory. Use when the user asks to install, clone, or set up
-  the buildify-flow-dev skill, or pastes https://github.com/buildify-bundles/buildify-flow-dev-skill.
+  the buildify-flow-dev skill, or pastes https://github.com/buildify-bundles/buildify-workflow-dev-skill.
 ---
 
 # 安装 buildify-flow-dev（给 Agent）
 
 用户把本文件、仓库地址或「安装 flow-dev skill」发给你时，**你来执行安装**，不要只把命令贴回去让用户自己跑。
 
-仓库：<https://github.com/buildify-bundles/buildify-flow-dev-skill>
+仓库：<https://github.com/buildify-bundles/buildify-workflow-dev-skill>
 
 ## 用户可以这样触发
 
 把下面整段发给任意编程 Agent（Cursor、Claude Code、Trae、通义灵码、CodeBuddy、Copilot 等）：
 
 ```
-请读取并执行 https://raw.githubusercontent.com/buildify-bundles/buildify-flow-dev-skill/main/install.md
+请读取并执行 https://raw.githubusercontent.com/buildify-bundles/buildify-workflow-dev-skill/main/install.md
 把 buildify-flow-dev skill 装到本机。先问我：全局（所有项目）还是当前仓库；若本机有多个客户端，问要不要一起装。
 ```
 
 ## 硬性规则
 
-- Skill **目录名必须是** `buildify-flow-dev`，不能用仓库名 `buildify-flow-dev-skill`。
+- Skill **目录名必须是** `buildify-flow-dev`，不能用仓库名 `buildify-workflow-dev-skill`。
 - 目标目录根下必须直接有 `SKILL.md`（frontmatter `name: buildify-flow-dev`）。
 - 用 `git clone` / `git pull`，不要手抄文件、不要改 `SKILL.md` 内容。
 - **禁止**写入 `~/.cursor/skills-cursor/`（Cursor 内置 skill 目录）。
@@ -146,7 +146,7 @@ Cursor 额外注意：
 **目录不存在：**
 
 ```bash
-git clone --depth 1 https://github.com/buildify-bundles/buildify-flow-dev-skill.git "$DEST"
+git clone --depth 1 https://github.com/buildify-bundles/buildify-workflow-dev-skill.git "$DEST"
 ```
 
 **目录已存在且是 git 仓库：**
@@ -162,7 +162,7 @@ origin 不是本仓库 → **停下问用户**，不要覆盖。
 
 若已有 `SKILL.md`，当作已安装，问用户要不要删掉后重新 clone；没有 `SKILL.md` 则不要往里塞文件，换路径或先问。
 
-克隆后若根目录没有 `SKILL.md`、却多了一层 `buildify-flow-dev-skill/`，把内容挪到 `DEST` 根下，保证 `DEST/SKILL.md` 存在。
+克隆后若根目录没有 `SKILL.md`、却多了一层 `buildify-workflow-dev-skill/`，把内容挪到 `DEST` 根下，保证 `DEST/SKILL.md` 存在。
 
 ## 4. 校验
 

@@ -1,6 +1,6 @@
 # buildify CLI
 
-包：`buildify-cli`，命令：`buildify`。`buildify help` 打印与本文件等价的 usage。
+包：`buildify-cli`，命令：`buildify`。`buildify help` 打印与本文件等价的 `usage.md`。
 
 ## 配置
 
@@ -46,11 +46,11 @@ TTY 下直接 `buildify config set-key api_key` 会打印获取步骤并用隐�
 | `bundle node-relations -b NAME -n NodeName` | 出口 relation 整份对象 → `edges[].data.relations[]`（`name`/`label`/`description`，自定义关系还有 `icon`/`_id`）。同一 source+target 一条边，多个出口接到同一下游时放进同一数组 |
 | `bundle doc -b NAME` | README Markdown |
 | `bundle cred-types / cred-properties` | 凭证类型与表单。创建凭证前用它们列出参数 |
-| `project list / create / get` | 项目。`list` 后必须把 **projectName**（及 remark）列给用户确认，禁止自行挑一个存放 |
-| `project credentials -p ID [-b bundle]` | 可引用凭证元数据，无密钥。列出 `label`/`name`/`type` 后请用户选择，禁止默认第一条 |
-| `project create-credential -p ID -b bundle --type TYPE` | 创建访问凭证。必须有项目。缺 name/label/data 时 `--json` 退出 3 并返回默认名称和表单字段；确认后再 stdin `--file -` 创建。响应无密钥 |
+| `project list / create / get` | 项目。用户没点名时 `list` 后必须把 **projectName**（及 remark）列给用户确认，禁止自行挑一个存放 |
+| `project credentials -p ID [-b bundle]` | 可引用凭证元数据，无密钥。列出 `label`/`name`/`type` 后每个槽位请用户三选一：使用已有 / 现在创建 / 使用时再选。禁止默认第一条或唯一项 |
+| `project create-credential -p ID -b bundle --type TYPE` | 仅当用户选「现在创建」。必须有项目。缺 name/label/data 时 `--json` 退出 3 并返回默认名称和表单字段；确认后再 stdin `--file -` 创建。响应无密钥 |
 | `project workers -p ID [--online-only]` | 创建流程和试跑需要 workerId。对用户列出 **workerName — 描述 — 在线/离线**（`remark` 为空则「无描述」），不要展示 hostname |
-| `flow list / create` | 流程 |
+| `flow list / create` | 流程。确认项目后 `list`，问新建还是改已有；新建名称须用户确认，禁止用需求摘要直接 create |
 | `flow get-draft / save-draft` | 草稿；save-draft 自动先读 `version` |
 | `flow validate -p ID -f flow.json` | 无副作用语义校验。把表单 ERROR 按节点 id 汇总写入画布 `errors`（通过 `{}`，未通过如 `{"n-k7mX2pL9":1}`） |
 | `flow test-run -p ID -f flow.json --worker wkr_…` | 阻塞直到完成或超时 |
