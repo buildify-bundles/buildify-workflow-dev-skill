@@ -1,4 +1,4 @@
-# buildify-flow-dev
+# buildify-workflow-dev
 
 Cursor / Claude Code Agent Skill：用已安装的 Bundle 节点编排 Buildify 工作流。
 
@@ -18,18 +18,18 @@ Cursor / Claude Code Agent Skill：用已安装的 Bundle 节点编排 Buildify 
 
 ## 安装
 
-目录名必须是 skill 名 `buildify-flow-dev`，且根目录直接有 `SKILL.md`。
+目录名必须是 skill 名 `buildify-workflow-dev`，且根目录直接有 `SKILL.md`。
 
 Cursor 全局（所有项目可用）：
 
 ```bash
-git clone https://github.com/buildify-bundles/buildify-workflow-dev-skill.git ~/.cursor/skills/buildify-flow-dev
+git clone https://github.com/buildify-bundles/buildify-workflow-dev-skill.git ~/.cursor/skills/buildify-workflow-dev
 ```
 
 项目级（随仓库共享给团队）：
 
 ```bash
-git clone https://github.com/buildify-bundles/buildify-workflow-dev-skill.git .cursor/skills/buildify-flow-dev
+git clone https://github.com/buildify-bundles/buildify-workflow-dev-skill.git .cursor/skills/buildify-workflow-dev
 ```
 
 其他客户端把同一目录放到各自 skills 路径即可：`~/.claude/skills/`、`~/.agents/skills/`、`~/.codebuddy/skills/`。
@@ -47,4 +47,4 @@ buildify --json key test
 
 ## 使用
 
-对话里提到编排流程、发布 flow、批注、节点分组、横排/竖排、连线标签、多段、独立接口、入口验证、接口说明、访问地址，或显式 `/buildify-flow-dev` 即可触发。
+对话里提到编排流程、发布 flow、批注、节点分组、横排/竖排、连线标签、多段、独立接口、入口验证、接口说明、访问地址，或显式 `/buildify-workflow-dev` 即可触发。

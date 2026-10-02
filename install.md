@@ -1,14 +1,14 @@
 ---
-name: buildify-flow-dev-install
+name: buildify-workflow-dev-install
 description: >-
-  Installs the buildify-flow-dev Agent Skill from GitHub into the correct
+  Installs the buildify-workflow-dev Agent Skill from GitHub into the correct
   client skills directory. Use when the user asks to install, clone, or set up
-  the buildify-flow-dev skill, or pastes https://github.com/buildify-bundles/buildify-workflow-dev-skill.
+  the buildify-workflow-dev skill, or pastes https://github.com/buildify-bundles/buildify-workflow-dev-skill.
 ---
 
-# 安装 buildify-flow-dev（给 Agent）
+# 安装 buildify-workflow-dev（给 Agent）
 
-用户把本文件、仓库地址或「安装 flow-dev skill」发给你时，**你来执行安装**，不要只把命令贴回去让用户自己跑。
+用户把本文件、仓库地址或「安装 workflow-dev skill」发给你时，**你来执行安装**，不要只把命令贴回去让用户自己跑。
 
 仓库：<https://github.com/buildify-bundles/buildify-workflow-dev-skill>
 
@@ -18,13 +18,13 @@ description: >-
 
 ```
 请读取并执行 https://raw.githubusercontent.com/buildify-bundles/buildify-workflow-dev-skill/main/install.md
-把 buildify-flow-dev skill 装到本机。先问我：全局（所有项目）还是当前仓库；若本机有多个客户端，问要不要一起装。
+把 buildify-workflow-dev skill 装到本机。先问我：全局（所有项目）还是当前仓库；若本机有多个客户端，问要不要一起装。
 ```
 
 ## 硬性规则
 
-- Skill **目录名必须是** `buildify-flow-dev`，不能用仓库名 `buildify-workflow-dev-skill`。
-- 目标目录根下必须直接有 `SKILL.md`（frontmatter `name: buildify-flow-dev`）。
+- Skill **目录名必须是** `buildify-workflow-dev`，不能用仓库名 `buildify-workflow-dev-skill`。
+- 目标目录根下必须直接有 `SKILL.md`（frontmatter `name: buildify-workflow-dev`）。
 - 用 `git clone` / `git pull`，不要手抄文件、不要改 `SKILL.md` 内容。
 - **禁止**写入 `~/.cursor/skills-cursor/`（Cursor 内置 skill 目录）。
 - 未问清「全局 vs 当前项目」以及「装哪些客户端」之前不要 clone。用户已经说了就按他说的装。
@@ -39,7 +39,7 @@ description: >-
 安装进度：
 - [ ] 1. 识别客户端，确定目标路径
 - [ ] 2. 询问（或确认）全局 vs 当前项目
-- [ ] 3. clone 或 pull 到 buildify-flow-dev/
+- [ ] 3. clone 或 pull 到 buildify-workflow-dev/
 - [ ] 4. 校验 SKILL.md 与 reference/
 - [ ] 5. 检查 Python + buildify-cli；缺密钥则提示签发
 - [ ] 6. 向用户汇报安装位置和下一步
@@ -66,7 +66,7 @@ ls -d ~/.cursor ~/.claude ~/.codex ~/.agents ~/.trae ~/.trae-cn ~/.traecli \
 未指定范围时问：
 
 ```
-buildify-flow-dev 装到哪里？
+buildify-workflow-dev 装到哪里？
 
 1) 全局 — 本机所有项目都能用（推荐个人使用）
 2) 当前仓库 — 写入该客户端的项目 skills 目录（可提交给团队）
@@ -77,9 +77,9 @@ buildify-flow-dev 装到哪里？
 
 ## 2. 目标路径
 
-`DEST` =「该客户端的全局或项目根」+ `/buildify-flow-dev`。目录名始终是 `buildify-flow-dev`。
+`DEST` =「该客户端的全局或项目根」+ `/buildify-workflow-dev`。目录名始终是 `buildify-workflow-dev`。
 
-**项目级优先写原生目录**（当前正在用的客户端）。若用户要「团队一份、多家 Agent 都能读」，再额外写一份到 `<workspace>/.agents/skills/buildify-flow-dev`（Cursor / Codex / Copilot / Gemini / OpenCode / Cline / Amp 等会扫这个通用目录）。
+**项目级优先写原生目录**（当前正在用的客户端）。若用户要「团队一份、多家 Agent 都能读」，再额外写一份到 `<workspace>/.agents/skills/buildify-workflow-dev`（Cursor / Codex / Copilot / Gemini / OpenCode / Cline / Amp 等会扫这个通用目录）。
 
 同时装多个客户端时：clone 一份到第一个 `DEST`，其余 `cp -R`（或再 clone），不要用仓库名当文件夹。
 
@@ -136,12 +136,12 @@ Trae 国内版全局必须是 `~/.trae-cn/skills/`，不要写成 `~/.trae/skill
 Cursor 额外注意：
 
 - 不要装到 `~/.cursor/skills-cursor/`。
-- 若对话上下文给出了 **user Agent Store** 路径，全局 skill 再同步一份到该 store 的 `skills/buildify-flow-dev/`（有 store 才写；没有就只装 `~/.cursor/skills/`）。
+- 若对话上下文给出了 **user Agent Store** 路径，全局 skill 再同步一份到该 store 的 `skills/buildify-workflow-dev/`（有 store 才写；没有就只装 `~/.cursor/skills/`）。
 - Cursor 也会读 `.agents/skills/`、`.claude/skills/`、`.codex/skills/`；原生目录仍是 `.cursor/skills/`。
 
 ## 3. Clone / 更新
 
-每个选中的客户端各有一个 `DEST`（上表路径 + `buildify-flow-dev`）。先 `mkdir -p` 父目录。
+每个选中的客户端各有一个 `DEST`（上表路径 + `buildify-workflow-dev`）。先 `mkdir -p` 父目录。
 
 **目录不存在：**
 
@@ -169,7 +169,7 @@ origin 不是本仓库 → **停下问用户**，不要覆盖。
 ```bash
 test -f "$DEST/SKILL.md"
 test -d "$DEST/reference"
-grep -E '^name: buildify-flow-dev$' "$DEST/SKILL.md"
+grep -E '^name: buildify-workflow-dev$' "$DEST/SKILL.md"
 ls "$DEST/reference"
 ```
 
@@ -211,20 +211,20 @@ buildify --json key test
 装好后用这个结构（每个客户端一行，路径写绝对路径）：
 
 ```markdown
-## buildify-flow-dev 已安装
+## buildify-workflow-dev 已安装
 
 | 客户端 | 范围 | 位置 |
 | --- | --- | --- |
-| Cursor | 全局 | `/Users/…/.cursor/skills/buildify-flow-dev` |
-| 通义灵码 | 全局 | `/Users/…/.lingma/skills/buildify-flow-dev` |
+| Cursor | 全局 | `/Users/…/.cursor/skills/buildify-workflow-dev` |
+| 通义灵码 | 全局 | `/Users/…/.lingma/skills/buildify-workflow-dev` |
 
 | 项 | 内容 |
 | --- | --- |
-| SKILL.md | 已确认 `name: buildify-flow-dev` |
+| SKILL.md | 已确认 `name: buildify-workflow-dev` |
 | buildify-cli | 已安装 / 未装（说明原因） |
 | API 密钥 | 已通过 `key test` / 待用户签发 |
 
-下一步：新开一轮对话，提到「编排流程 / 发布 flow」，或输入 `/buildify-flow-dev`。
+下一步：新开一轮对话，提到「编排流程 / 发布 flow」，或输入 `/buildify-workflow-dev`。
 当前对话里 skill 列表可能还没刷新，必要时请用户 reload 窗口。
 ```
 

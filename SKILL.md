@@ -1,5 +1,5 @@
 ---
-name: buildify-flow-dev
+name: buildify-workflow-dev
 description: >-
   Authors Buildify workflows from installed Bundle nodes: discover capabilities,
   canvas JSON, validate, test-run, deploy. Notes stay off except one per HTTP
