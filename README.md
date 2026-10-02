@@ -29,6 +29,12 @@ git clone https://github.com/buildify-bundles/buildify-workflow-dev-skill.git ~/
 git clone https://github.com/buildify-bundles/buildify-workflow-dev-skill.git .cursor/skills/buildify-workflow-dev
 ```
 
+GitHub 克隆失败或超时时，把上面命令里的仓库地址换成 Gitee 备用地址 `https://gitee.com/buildify/buildify-workflow-dev-skill.git`，目标目录不变。例如 Cursor 全局：
+
+```bash
+git clone https://gitee.com/buildify/buildify-workflow-dev-skill.git ~/.cursor/skills/buildify-workflow-dev
+```
+
 其他客户端把同一目录放到各自 skills 路径即可：`~/.claude/skills/`、`~/.agents/skills/`、`~/.codebuddy/skills/`。
 
 ## 包含文件
