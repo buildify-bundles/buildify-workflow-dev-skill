@@ -15,7 +15,7 @@ buildify --json bundle node-relations  -b official/core -n WebhookTrigger
 `label` 从目录拷贝类型名；`summary` 按本流程职责自写且 **≤8 字**（画布默认显示它），不要照抄目录 `summary`。
 默认按顶层 `direction` 排，节点按约 240×88 占位、同层对齐。**`TB` 竖排**：主链同一 x、`y += 160`（净空约 72），相邻列 `x` 相差 320（净空约 80）。**`LR` 横排**（用户要求或草稿已是横排）：主链同一 y、`x += 360`（净空约 120，出口文字是横的），相邻行 `y` 相差 160（净空约 72）。连线 label 在该边中点，中点要落在两卡片之间、并且只属于这一条边。一条边超过 2 个出口 label 时沿流向再加长。能直连汇合且中点彼此分开再共用下游；否则各支路沿主方向继续排，必要时复制配置相同的节点，避免连线交叉。执行节点写 `sourcePosition` / `targetPosition`，与 `direction` 一致。
 边上的 `relations` 必须从 `node-relations` **整份拷贝**（至少 `name` + `label` + `description`）。**同一对 source+target 只有一条边**；接到同一下游的多个出口（如 Success+Failure）全部放进该边 `data.relations[]`，不要拆成两条边。MCP 自定义关系还要带 `_id` / `icon` / `mcpKind`，并写到源节点 `data.relations`。
-参数里的表达式按 `uiComponent` 写（JSON 整段 `"=` + `{{ }}`，如 `"=this is title {{msg.title}}"`，禁止 `this is ={{msg.title}}`；SQL `#{}` `${}`；文本 `{{ }}`），见 [expressions.md](expressions.md)。JS 节点 `code` **分段 + 中文注释**，不要写成无注释单行。不要把 Webhook 响应当成一个叫 `body` 的字段。
+参数里的表达式按 `uiComponent` 写（JSON 默认 `"={{msg.xxx}}"` 保留类型，要字符串才 `"=前缀 {{msg.xxx}}"`，禁止 `this is ={{msg.title}}`；SQL `#{}` `${}`；文本 `{{ }}`），见 [expressions.md](expressions.md)。JS 节点 `code` **分段 + 中文注释**，不要写成无注释单行。不要把 Webhook 响应当成一个叫 `body` 的字段。
 **真正写入画布时，节点 `id` 用 `n-` + nanoid（如 `n-k7mX2pL9`，流程内唯一）**，不要照抄下面的 `trigger` / `work` / `reply`。顶层必写 `errors`（通过 `{}`，未通过 `"errors":{"n-k7mX2pL9":1}`）和 `direction`（默认 `"TB"`），见 [flow-json.md](flow-json.md)。下面骨架默认 `TB`；用户要横排时改成 `"direction": "LR"`，并按 [flow-json.md](flow-json.md)「画布排列」改坐标和锚点。
 
 ## 1. Webhook 触发 → 处理 → 应答
@@ -76,7 +76,7 @@ buildify --json bundle node-relations  -b official/core -n WebhookTrigger
         "parameters": {
           "responseType": "custom",
           "outputType": "json",
-          "jsonValue": "={{ msg.output }}",
+          "jsonValue": "={{msg.output}}",
           "options": { "responseStatusCode": 200 }
         }
       }
@@ -111,7 +111,7 @@ buildify --json bundle node-relations  -b official/core -n WebhookTrigger
 
 `type` / `name` 必须能在 `buildify project credentials -p <proj>` 里找到。选了「使用时再选」则不写该槽，校验 ERROR 写入 `errors` 后只 save-draft，不要试跑。项目、流程与试跑服务器同样要用户点选（见 SKILL「必须用户点选」）。
 
-`jsonValue` 是 `JsonExpressionInput`：`=` 必须在**整段字符串开头**。整对象注入用 `"={{ msg.output }}"`；混排用 `"=this is title {{msg.title}}"`，不要写成 `"this is ={{msg.title}}"`。若改成纯文本响应（`outputType: text`，字段 `textValue`），变量写成 `{{ msg.output.title }}`，不要套 JSON 的 `=` 前缀。
+`jsonValue` 是 `JsonExpressionInput`：默认整字段 `"={{msg.output}}"`，对象原样注入、类型保留。要拼成字符串才写 `"=[{{msg.output.type}}] {{msg.output.title}}"`。`=` 必须是引号内第一个字符，不要写成 `"this is ={{msg.title}}"`，花括号里不要空格。若改成纯文本响应（`outputType: text`，字段 `textValue`），变量写成 `{{msg.output.title}}`，不要套 JSON 的 `=` 前缀。
 
 ## 2. 定时 → 拉取 → 落库
 
@@ -121,7 +121,7 @@ ScheduleTrigger → HttpRequestNode → 写入节点（以实际 bundle 为准�
 
 1. `bundle nodes` 找到定时触发器，确认 `isTrigger`；`label` 拷目录类型名
 2. 每个节点写短 `summary`（≤8 字，画布默认显示），如「每小时触发」「拉取列表」「写入 MySQL」
-3. HTTP 节点的 URL / method 以 `node-properties` 为准，不要抄本文件的字段名。URL 等文本字段用 `{{ msg.xxx }}`；请求体若是 `JsonExpressionInput`，字符串值整段以 `=` 开头、插值 `{{ msg.xxx }}`（如 `"=this is title {{msg.title}}"`）
+3. HTTP 节点的 URL / method 以 `node-properties` 为准，不要抄本文件的字段名。URL 等文本字段用 `{{msg.xxx}}`；请求体若是 `JsonExpressionInput`，默认 `"={{msg.output}}"` 保留类型，要拼成字符串才 `"=前缀 {{msg.xxx}}"`
 4. 写入节点几乎一定要凭证：先 `project credentials` 列出名称，请用户选 **使用已有** / **现在创建** / **使用时再选**；不要猜实例名，也不要因为只有一条就默认绑定
 5. `SqlEditor` 字段用 `#{msg.xxx}`（值）和 `${msg.xxx}`（表名/列名），**不要**写 `{{ }}` 或给 SQL 加 `=` 前缀：
 

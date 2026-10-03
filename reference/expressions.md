@@ -1,6 +1,6 @@
 # 表达式：按 uiComponent 选语法
 
-权威说明：[表达式类型总览](https://docs.buildify.cn/expr.html)。
+权威说明：[表达式类型总览](https://docs.buildify.cn/expr.html)、[JSON 表达式](https://docs.buildify.cn/concepts/json_expr.html)。
 占位名一律 `msg`，不要用 `$json`。触发器字段在根级（`msg.xxx`），处理节点结果在 `msg.output`。
 
 写 `data.parameters` 前先看 `node-properties` 的 **`uiComponent`**。不要把 JSON 的 `=` 前缀套到 SQL 或纯文本上。
@@ -9,7 +9,7 @@
 
 | uiComponent | 变量语法 | 画布里怎么写 |
 |---|---|---|
-| **`JsonExpressionInput`** | 整段以 `=` 开头，插值 `{{msg.xxx}}` | `=` 是**整段字符串值的模式标记**（引号内第一个字符），不是 `{{ }}` 的一部分。✅ `"=this is title {{msg.title}}"`；✅ 整字段 `"={{msg.output.id}}"`（保留数字/布尔/对象类型）。❌ `"this is ={{msg.title}}"`（`=` 夹在中间） |
+| **`JsonExpressionInput`** | 默认整字段 `={{msg.xxx}}` | 只改需要取值的**字符串值**。默认 `"={{msg.level}}"`，数字/布尔/对象/数组类型保留。结果必须是字符串时才混静态文字：`"=[{{msg.type}}] {{msg.title}}"`。`=` 必须是引号内第一个字符。❌ `"this is ={{msg.title}}"` |
 | **`SqlEditor`** | `#{msg.xxx}` / `${msg.xxx}` | **禁止** `{{ }}` 和字符串值前的 `=`。值用 `#{msg.id}`（预编译，防注入）；表名/列名用 `${msg.orderColumn}`（直接替换） |
 | **文本及其他**（`Input` / `Password` / `ExpressionInput` / `CodeEditor` 文本·XML·HTML 等） | `{{msg.xxx}}` | 文案、URL、标题里写 `{{msg.output.title}}`。字段若 `expression: true`、或是 `ExpressionInput`、或 `CodeEditor` 默认开了表达式，**整段存储值以 `=` 开头**（同样是模式标记）：`"={{msg.output.path}}"` 或 `"=https://x.com/{{msg.id}}"`。不要写成 `"https://x.com/={{msg.id}}"` |
 | **`BooleanExpressionInput`** | 无括号 | 直接 SpEL：`"msg.output.status == 'ok'"`，不要写 `{{ }}`，也不要加 `=` 前缀 |
@@ -17,29 +17,39 @@
 
 `JsonEditor` 是纯 JSON 数据，不要往里面塞表达式模式；要在 JSON 里注入变量并保留类型，用 `JsonExpressionInput`。
 
-## JSON：整段 `=` + `{{ }}`（JsonExpressionInput）
+## JSON 表达式（JsonExpressionInput）
 
-组件只解析 **JSON 字符串值**里以 `=` 开头的内容；其中的 `{{ }}` 才是变量。`=` 必须贴在该字符串的最前面。
+只用于 `uiComponent` 为 `JsonExpressionInput` 的字段（请求体、JSON 赋值）。按**每个字符串值**决定，不要给整个 JSON 加一层 `=`，也不要改静态字面量。
+
+**默认整字段替换**，类型与变量一致：
 
 ```json
 {
-  "title": "={{msg.output.title}}",
-  "subject": "=this is title {{msg.title}}",
-  "level": "={{msg.output.level}}",
-  "sender": "={{msg.output.sender}}"
+  "title": "={{msg.title}}",
+  "level": "={{msg.level}}",
+  "isRead": "={{msg.isRead}}",
+  "sender": "={{msg.sender}}",
+  "tags": "={{msg.tags}}"
 }
 ```
 
-| 写法 | 对错 | 结果 |
-|---|---|---|
-| `"title": "=this is title {{msg.title}}"` | ✅ | 字符串：`this is title` + 变量值 |
-| `"title": "={{msg.output.title}}"` | ✅ | 整字段替换，类型与变量一致（`3` 仍是数字，`false` 仍是布尔） |
-| `"data": "={{msg.output}}"` | ✅ | 整个对象/数组原样注入 |
-| `"subject": "=[{{msg.output.type}}] {{msg.output.title}}"` | ✅ | 混文本，**一定是字符串** |
-| `"title": "this is ={{msg.title}}"` | ❌ | `=` 夹在静态文字后面，表达式模式未开启，变量不会按动态值解析 |
-| `"title": "this is title ={{msg.title}}"` | ❌ | 同上 |
+运行后 `level` 仍是数字，`isRead` 仍是布尔，`sender` 仍是对象，`tags` 仍是数组。嵌套用点号：`"={{msg.sender.name}}"`。触发器字段在 `msg.xxx`，处理节点结果在 `msg.output.xxx`。
 
-`{{ }}` **不支持运算**（不要写 `{{ a + b }}` 或 `={{ a + b }}`）。要算，用 JS 节点或布尔表达式。
+**只有结果必须是字符串时才混静态文字。** `=` 仍是该字符串的第一个字符：
+
+```json
+{ "subject": "=[{{msg.type}}] {{msg.title}}" }
+```
+
+| 写法 | 结果 |
+|---|---|
+| `"={{msg.level}}"` | 类型与变量一致（数字、布尔、对象、数组都保留） |
+| `"={{msg.sender}}"` / `"={{msg.tags}}"` | 对象 / 数组原样注入 |
+| `"=[{{msg.type}}] {{msg.title}}"`、`"=你好 {{msg.name}}"` | 一定是字符串，变量原类型被丢掉 |
+| `"this is ={{msg.title}}"` | 表达式没开，按字面量留下 |
+| `"={{msg.a + msg.b}}"` | 不支持运算 |
+
+花括号里只写路径，不要空格。变量名拼错，或嵌套中间层为空：该字段变成 `""`，配置不报错，运行不中断。JSON 表达式里不要写 `?.`。要计算，用 JS 节点或布尔表达式。
 
 ## SQL：`#{}` / `${}`（SqlEditor）
 

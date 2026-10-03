@@ -42,7 +42,7 @@ TTY 下直接 `buildify config set-key api_key` 会打印获取步骤并用隐�
 | `key test` | 校验密钥并回显工作区 |
 | `bundle list [-k keyword]` | 可用 bundle。需求对应的包不在列表里 → 停止编排，请用户用 buildify-bundle-dev 实现并发布后再继续 |
 | `bundle nodes -b NAME [-V ver]` | 节点目录（已展平 `groups_json[].nodes` + `nodes_json`，含 `icon` / `label` / `isTrigger`）。目录 `summary` 是类型通用简述，**不要**直接当作画布文案 |
-| `bundle node-properties -b NAME -n NodeName` | 表单 schema → `data.parameters`；同时带回 `icon` / `label` / `summary` / `isTrigger` / **`uiComponent`**。按组件写表达式：JSON 整段 `"=` + `{{ }}`（禁止 `this is ={{msg.xxx}}`），SQL `#{}` `${}`，文本 `{{ }}`。画布 `data.summary` 仍按本流程职责自写，且 ≤8 字 |
+| `bundle node-properties -b NAME -n NodeName` | 表单 schema → `data.parameters`；同时带回 `icon` / `label` / `summary` / `isTrigger` / **`uiComponent`**。按组件写表达式：JSON 默认 `"={{msg.xxx}}"`（要字符串才 `"=前缀 {{msg.xxx}}"`，禁止 `this is ={{msg.xxx}}`），SQL `#{}` `${}`，文本 `{{ }}`。画布 `data.summary` 仍按本流程职责自写，且 ≤8 字 |
 | `bundle node-relations -b NAME -n NodeName` | 出口 relation 整份对象 → `edges[].data.relations[]`（`name`/`label`/`description`，自定义关系还有 `icon`/`_id`）。同一 source+target 一条边，多个出口接到同一下游时放进同一数组 |
 | `bundle doc -b NAME` | README Markdown |
 | `bundle cred-types / cred-properties` | 凭证类型与表单。创建凭证前用它们列出参数 |

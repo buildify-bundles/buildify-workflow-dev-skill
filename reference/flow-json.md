@@ -462,7 +462,7 @@ MCP 自定义出口示例（源节点 `data.relations` 与边上都要同一份�
 ```
 
 普通节点的输出在 payload 里包一层 `output`；触发器的 payload 在根级。占位名用 `msg`，不要用 `$json`。
-**表达式按字段 `uiComponent` 写**：JSON（`JsonExpressionInput`）字符串值**整段以 `=` 开头**，插值用 `{{msg.xxx}}`（✅ `"=this is title {{msg.title}}"` / `"={{msg.xxx}}"`；❌ `"this is ={{msg.title}}"`）；SQL（`SqlEditor`）用 `#{msg.xxx}` / `${msg.xxx}`；文本及其他用 `{{msg.xxx}}`。JS 节点 `code` 分段并加中文注释。见 [expressions.md](expressions.md)。
+**表达式按字段 `uiComponent` 写**：JSON（`JsonExpressionInput`）默认整字段 `"={{msg.xxx}}"` 以保留类型，要拼成字符串才写 `"=前缀 {{msg.xxx}}"`（禁止 `"this is ={{msg.title}}"`）；SQL（`SqlEditor`）用 `#{msg.xxx}` / `${msg.xxx}`；文本及其他用 `{{msg.xxx}}`。JS 节点 `code` 分段并加中文注释。见 [expressions.md](expressions.md)。
 
 ## 校验顺序
 

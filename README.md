@@ -45,7 +45,7 @@ git clone https://gitee.com/buildify/buildify-workflow-dev-skill.git ~/.cursor/s
 | `install.md` | 把 `buildify-workflow-dev` 装到各客户端 skills 目录 |
 | `reference/cli.md` | `buildify` CLI 命令与退出码 |
 | `reference/flow-json.md` | 画布 JSON：`n-` + nanoid、`errors`、`direction`（TB/LR）、分组、边 relation、批注 |
-| `reference/expressions.md` | 按组件写表达式：JSON 整段以 `=` 开头、SQL `#{}` `${}`、文本 `{{ }}`；JS 节点分段注释 |
+| `reference/expressions.md` | 按组件写表达式：JSON 默认 `={{msg.xxx}}`、SQL `#{}` `${}`、文本 `{{ }}`；JS 节点分段注释 |
 | `reference/recipes.md` | 常见骨架 |
 | `reference/comment-node.md` | 批注节点字段 |
 
