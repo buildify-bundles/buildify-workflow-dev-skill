@@ -56,9 +56,11 @@ git clone https://gitee.com/buildify/buildify-workflow-dev-skill.git ~/.cursor/s
 - 控制台签发的开放 API 密钥（`keyId.secret`），写入 `~/.buildifyrc`
 
 ```bash
-printf '%s' 'keyId.secret' | buildify config set-key api_key
+printf '%s' 'keyId.secret' | buildify config add-profile <工作区别名>
 buildify --json key test
 ```
+
+多个工作区时用 `buildify --json config profiles` 看已存名称，之后的命令加 `--profile <名称>`。
 
 ## 使用
 

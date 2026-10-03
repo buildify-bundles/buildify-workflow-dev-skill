@@ -193,10 +193,10 @@ HTTP 接口的入口验证优先用触发器「入站认证」`authType`（`none
 ## 4. 改已有流程
 
 ```bash
-buildify --json flow get-draft -p "$PROJ" -w "$WF" > draft.json
+buildify --json workflow get-draft -p "$PROJ" -w "$WF" > draft.json
 # 取出 data.workflowJson 作为画布，改完后：
-buildify --json flow validate -p "$PROJ" -f ./flow.json
-buildify --json flow save-draft -p "$PROJ" -w "$WF" -f ./flow.json
+buildify --json workflow validate -p "$PROJ" -f ./flow.json
+buildify --json workflow save-draft -p "$PROJ" -w "$WF" -f ./flow.json
 ```
 
 不要从空模板覆盖已有草稿，除非用户明确要求重写。改节点职责时同步改 `data.summary`（仍 ≤8 字）。沿用草稿的 `direction`，不要仅为改排列而大挪已有节点；用户要求重排或改方向时再对齐。

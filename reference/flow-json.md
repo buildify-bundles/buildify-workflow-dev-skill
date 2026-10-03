@@ -18,7 +18,7 @@
 ```
 
 解析器只读 `nodes` 与 `edges`。`viewport` / `position` / `zoom` 是 UI 字段，但要给互不重叠的坐标，否则画布叠在一起。
-顶层 **`errors` 必写**：表单校验结果按节点 id 汇总。全部通过写 `{}`；未通过写 `{"<nodeId>": <未通过字段数>}`。`flow validate` 之后把这份汇总写回 JSON 再 save-draft。
+顶层 **`errors` 必写**：表单校验结果按节点 id 汇总。全部通过写 `{}`；未通过写 `{"<nodeId>": <未通过字段数>}`。`workflow validate` 之后把这份汇总写回 JSON 再 save-draft。
 顶层 **`direction` 必写**：控制台画布排列方向，决定主链怎么走、连线从哪边进出。缺了控制台按 `TB`。
 
 ## 画布排列（按 `direction`）
@@ -152,7 +152,7 @@ python3 -c "import secrets,string; a=string.ascii_letters+string.digits; print('
 
 ### 表单校验：`errors` 写入流程 JSON
 
-画布顶层必须带 `errors`，按节点 id 汇总未通过的表单字段数。`flow validate` 之后**写回这份 JSON**，不要只读响应、不落盘。
+画布顶层必须带 `errors`，按节点 id 汇总未通过的表单字段数。`workflow validate` 之后**写回这份 JSON**，不要只读响应、不落盘。
 
 全部通过：
 
@@ -168,7 +168,7 @@ python3 -c "import secrets,string; a=string.ascii_letters+string.digits; print('
 
 多个节点：`"errors":{"n-k7mX2pL9":1,"n-CIq2dZyc":2}`。只统计表单参数 ERROR（缺必填、枚举非法、未知键），不要把 WARNING 写进去。
 
-处理：用 key 在 `nodes[]` 里定位 → 对照 `node-properties` 修 `data.parameters` → 再 `flow validate` → 把新的 `errors` 写进 JSON。用户明确说稍后自填时，仍要把当前汇总写进去再 save-draft。`issues[].nodeId` 与此同一套 id。
+处理：用 key 在 `nodes[]` 里定位 → 对照 `node-properties` 修 `data.parameters` → 再 `workflow validate` → 把新的 `errors` 写进 JSON。用户明确说稍后自填时，仍要把当前汇总写进去再 save-draft。`issues[].nodeId` 与此同一套 id。
 
 `label` 与 `summary` 分工：`label` 是节点类型名（跟目录走）；`summary` 是画布卡片上的默认文案，描述**这一颗**节点在本流程里做什么，**要短**。
 
@@ -466,7 +466,7 @@ MCP 自定义出口示例（源节点 `data.relations` 与边上都要同一份�
 
 ## 校验顺序
 
-`buildify flow validate` 按这个顺序报 `issues`。每次校验后把表单 ERROR 按节点 id 汇总写入画布顶层 `errors`：通过为 `{}`，未通过如 `"errors":{"n-k7mX2pL9":1}`。
+`buildify workflow validate` 按这个顺序报 `issues`。每次校验后把表单 ERROR 按节点 id 汇总写入画布顶层 `errors`：通过为 `{}`，未通过如 `"errors":{"n-k7mX2pL9":1}`。
 
 顺序：
 

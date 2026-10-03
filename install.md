@@ -85,11 +85,11 @@ ls "$DEST/reference"
 
 1. Python 3.10+（`python3 --version`）。不够就提示升级，不要改系统 Python。
 2. `python3 -m pip install -U buildify-cli`，然后 `buildify help`。
-3. `buildify --json key test`。退出码 0 即可用。退出码 2 且 `data.reason=missing_api_key` 时，把 `data.userMessage` 原样发给用户，等用户发来完整密钥（`keyId.secret`）后再写入：
+3. `buildify --json key test`。退出码 0 即可用。退出码 2 且 `data.reason=missing_api_key` 时，把 `data.userMessage` 原样发给用户，问一个简短 profile 名，等用户发来完整密钥（`keyId.secret`）后再写入。`profile_required` 时列出 profile 让用户选，之后命令加 `--profile`：
 
 ```bash
-printf '%s' "$KEY" | buildify config set-key api_key
-buildify --json config show
+printf '%s' "$KEY" | buildify config add-profile "$PROFILE"
+buildify --json config profiles
 buildify --json key test
 ```
 
