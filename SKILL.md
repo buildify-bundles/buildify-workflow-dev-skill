@@ -222,7 +222,7 @@ description: >-
 ```
 准备发布，请确认版本信息（可改）：
 
-- 版本号：v1.0.0          （用户没指定时给建议值，如 v1.0.0 或当前时间戳；不要擅自用时间戳直接发布）
+- 版本号：v20261005-184620   （用户没指定版本时，用确认当下的本地时间：`v` + `yyyyMMdd-HHmmss`。用户指定了别的版本号就用用户的）
 - 发布说明：首次上线 /test2 当前时间接口   （根据本流程写一句，用户可改或说「不要说明」）
 ```
 
@@ -230,10 +230,10 @@ description: >-
 
 ```bash
 buildify --json workflow deploy -p "$PROJ" -w "$WF" --worker "$WKR" \
-  --version-name "v1.0.0" --remark "首次上线 /test2 当前时间接口" --wait
+  --version-name "v20261005-184620" --remark "首次上线 /test2 当前时间接口" --wait
 ```
 
-省略 `--version-name` 时服务端会生成 `vyyyyMMdd-HHmmss`；省略 `--remark` 则该版本没有发布说明。这两项只写到**该发布版本**，不会改流程创建时的描述。
+没有特殊指定时必须带上 `--version-name`，值为上面确认过的 `v` + `yyyyMMdd-HHmmss`，不要改成 `v1.0.0`，也不要省略让服务端另起一版。用户指定了别的版本号就传用户的。省略 `--remark` 则该版本没有发布说明。这两项只写到**该发布版本**，不会改流程创建时的描述。
 
 `--wait` 的 JSON 含 `versionName`、`publishRemark` 和完整 `summary`。直接用它画表格。
 
@@ -241,7 +241,7 @@ buildify --json workflow deploy -p "$PROJ" -w "$WF" --worker "$WKR" \
 
 规则：
 
-- 版本号、发布说明：deploy 前请用户确认或修改。`--version-name` 只作用于该发布版本；`--remark` 是发布说明，不是流程描述。未确认不要 deploy。
+- 版本号、发布说明：deploy 前请用户确认或修改。用户没指定版本号时，建议值是确认当下的本地时间 `v` + `yyyyMMdd-HHmmss`（如 `v20261005-184620`）。`--version-name` 只作用于该发布版本；`--remark` 是发布说明，不是流程描述。未确认不要 deploy。
 - 试跑失败、超时、用户明确说「先不要发布」、确认清单选了「只保存草稿」、或凭证尚未绑定（「使用时再选」）→ 停在草稿，不要 deploy。试跑后又改了 JSON，先 `save-draft` 再 deploy。
 - `--wait` 会在 CLI 内轮询到结束，Agent **不要**再循环调 `workflow deployment`。失败时退出码 4，把返回的 `summary.servers[].message` 原样告诉用户。
 - 对用户说话只用名称：项目名、流程名、版本名、服务器表格里的 `workerName`。不要甩 projectId / workerId / deploymentId，除非用户要排障。
@@ -257,7 +257,7 @@ buildify --json workflow deploy -p "$PROJ" -w "$WF" --worker "$WKR" \
 | --- | --- |
 | 项目 | 测试项目 |
 | 流程 | 当前时间 API |
-| 版本号 | `v1.0.0` |
+| 版本号 | `v20261005-184620` |
 | 发布说明 | 首次上线 /test2 当前时间接口 |
 | 总体 | ✅ 成功 |
 | 发布时间 | 2026-09-21 09:30:00 |

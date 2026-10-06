@@ -68,7 +68,7 @@ buildify --json config profiles
 | `workflow validate -p ID -f flow.json` | 无副作用语义校验。把表单 ERROR 按节点 id 汇总写入画布 `errors`（通过 `{}`，未通过如 `{"n-k7mX2pL9":1}`） |
 | `workflow test-run -p ID -f flow.json --worker wkr_…` | 阻塞直到完成或超时。默认跑整张图。用户明确要单节点时才加 `--start-node` 和 `--inputs` |
 | `workflow cancel-test --execution-id … --worker …` | 取消试跑 |
-| `workflow deploy -p ID -w WF --worker wkr_… [--version-name v1.0.0] [--remark 说明] [--wait]` | 发布已 save-draft 的草稿。发布前请用户确认版本号和发布说明。不要再传 `-f` |
+| `workflow deploy -p ID -w WF --worker wkr_… [--version-name v20261005-184620] [--remark 说明] [--wait]` | 发布已 save-draft 的草稿。发布前请用户确认版本号和发布说明。用户没指定版本时用 `v` + `yyyyMMdd-HHmmss`。不要再传 `-f` |
 | `workflow published -p ID -w WF` | 事后查线上版本。刚 `deploy --wait` 完不要再调，那次响应已经够画表 |
 | `workflow deployment -p ID -w WF -d deploy_…` | 一次部署的总体状态和每台服务器结果。`--wait` 已经在 CLI 内轮询，Agent 不要再循环调 |
 
@@ -84,7 +84,7 @@ done
 buildify --json workflow save-draft -p "$PROJ" -w "$WF" -f ./flow.json
 buildify --json workflow test-run -p "$PROJ" -f ./flow.json --worker "$WKR" --timeout 60
 buildify --json workflow deploy -p "$PROJ" -w "$WF" --worker "$WKR" \
-  --version-name "v1.0.0" --remark "首次上线" --wait
+  --version-name "v20261005-184620" --remark "首次上线" --wait
 ```
 
 多 profile 时每条加上 `--profile "$PROFILE"`。
@@ -93,4 +93,4 @@ buildify --json workflow deploy -p "$PROJ" -w "$WF" --worker "$WKR" \
 
 `test-run` 的 HTTP 读超时 = 服务端 timeout + 30s。超时返回 `reason: "timeout"` 和已收到的部分事件，再用 `workflow cancel-test` 停 worker。
 
-`workflow deploy` 在发布时可改 `--version-name`（版本号）和 `--remark`（发布说明，写入该版本）。默认 `--wait`。轮询走 `?statusOnly=true`，结束再 GET 一次完整摘要。刚发布完用这次返回的 `versionName` / `publishRemark` / `summary` 画表即可。
+`workflow deploy` 在发布时传 `--version-name`（版本号）和 `--remark`（发布说明，写入该版本）。用户没有特殊指定版本号时，用确认当下的本地时间 `v` + `yyyyMMdd-HHmmss`（如 `v20261005-184620`），并写进 `--version-name`。默认 `--wait`。轮询走 `?statusOnly=true`，结束再 GET 一次完整摘要。刚发布完用这次返回的 `versionName` / `publishRemark` / `summary` 画表即可。
