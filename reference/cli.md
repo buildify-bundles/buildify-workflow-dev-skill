@@ -59,16 +59,16 @@ buildify --json config profiles
 | `bundle node-relations -b NAME -n NodeName` | 出口 relation 整份对象 → `edges[].data.relations[]`（`name`/`label`/`description`，自定义关系还有 `icon`/`_id`）。同一 source+target 一条边，多个出口接到同一下游时放进同一数组 |
 | `bundle doc -b NAME` | README Markdown |
 | `bundle cred-types / cred-properties` | 凭证类型与表单。创建凭证前用它们列出参数 |
-| `project list / create / get` | 项目。改已有流程时用它所在的项目，不要再问。新建且用户没点名才 `list` 让他选。已点名的直接用 |
-| `project credentials -p ID [-b bundle]` | 可引用凭证元数据，无密钥。草稿里该槽已有 `{type, name}`、或用户已点名的，直接沿用。只问空槽，三选一：使用已有 / 现在创建 / 使用时再选。禁止默认第一条或唯一项 |
+| `project list / create / get` | 项目。改已有流程时用它所在的项目，不要再问。新建且用户没点名才让他点选一个。已点名的直接用 |
+| `project credentials -p ID [-b bundle]` | 可引用凭证元数据，无密钥。草稿里该槽已有 `{type, name}`、或用户已点名的，直接沿用。只问空槽，每条已有实例、现在创建、使用时再选各做一个选项。禁止默认第一条或唯一项 |
 | `project create-credential -p ID -b bundle --type TYPE` | 仅当用户选「现在创建」。必须有项目。缺 name/label/data 时 `--json` 退出 3，`data.reason=credential_input_required`，返回默认名称和表单字段；确认后再 stdin `--file -` 创建。响应无密钥。不要 `--data` 上 argv |
-| `project workers -p ID [--online-only]` | 试跑和发布需要 workerId。流程已绑定的、或用户已点名的服务器直接用。都没有才列出 **workerName — 描述 — 在线/离线**（`remark` 为空则「无描述」），不要展示 hostname |
+| `project workers -p ID [--online-only]` | 试跑和发布需要 workerId。流程已绑定的、或用户已点名的服务器直接用。都没有才把每台做成选项：**workerName — 描述 — 在线/离线**（`remark` 为空则「无描述」），不要展示 hostname |
 | `workflow list / create` | 流程。改已有直接打开这一条。新建且用户没说新建还是改哪条才 `list`。新建名没给时用写给用户看过的建议名，不要用没展示过的名字直接 create |
 | `workflow get-draft / save-draft` | 草稿；save-draft 自动先读 `version`。流程 id 用 `-w` / `--flow` |
 | `workflow validate -p ID -f flow.json` | 无副作用语义校验。把表单 ERROR 按节点 id 汇总写入画布 `errors`（通过 `{}`，未通过如 `{"n-k7mX2pL9":1}`） |
 | `workflow test-run -p ID -f flow.json --worker wkr_…` | 阻塞直到完成或超时。默认跑整张图。用户明确要单节点时才加 `--start-node` 和 `--inputs` |
 | `workflow cancel-test --execution-id … --worker …` | 取消试跑 |
-| `workflow deploy -p ID -w WF --worker wkr_… [--version-name v20261005-184620] [--remark 说明] [--wait]` | 发布已 save-draft 的草稿。版本号和发布说明放进 **已有默认** 再发；用户没提就用默认。没指定版本时用 `v` + `yyyyMMdd-HHmmss`。不要再传 `-f` |
+| `workflow deploy -p ID -w WF --worker wkr_… [--version-name v20261005-184620] [--remark 说明] [--wait]` | 发布已 save-draft 的草稿。用点选确认：按此发布 / 不要说明 / 先不发布。没指定版本时用 `v` + `yyyyMMdd-HHmmss`。不要再传 `-f` |
 | `workflow published -p ID -w WF` | 事后查线上版本。刚 `deploy --wait` 完不要再调，那次响应已经够画表 |
 | `workflow deployment -p ID -w WF -d deploy_…` | 一次部署的总体状态和每台服务器结果。`--wait` 已经在 CLI 内轮询，Agent 不要再循环调 |
 
