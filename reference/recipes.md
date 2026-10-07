@@ -109,7 +109,7 @@ buildify --json bundle node-relations  -b official/core -n WebhookTrigger
 }
 ```
 
-`type` / `name` 必须能在 `buildify project credentials -p <proj>` 里找到。选了「使用时再选」则不写该槽，校验 ERROR 写入 `errors` 后只 save-draft，不要试跑。项目、新建还是改已有、服务器、凭证槽放在确认清单的「需要你选」；新建流程名、画布方向、试跑后是否发布放在「已有默认」（见 SKILL「必须用户点选」）。
+`type` / `name` 必须能在 `buildify project credentials -p <proj>` 里找到。选了「使用时再选」则不写该槽，校验 ERROR 写入 `errors` 后只 save-draft，不要试跑。改已有流程时沿用它所在的项目、这条流程、已绑定的服务器和草稿里已写的凭证；新建时用户没给的才问（见 SKILL「沿用已有，只问缺的」）。
 
 `jsonValue` 是 `JsonExpressionInput`：默认整字段 `"={{msg.output}}"`，对象原样注入、类型保留。要拼成字符串才写 `"=[{{msg.output.type}}] {{msg.output.title}}"`。`=` 必须是引号内第一个字符，不要写成 `"this is ={{msg.title}}"`，花括号里不要空格。若改成纯文本响应（`outputType: text`，字段 `textValue`），变量写成 `{{msg.output.title}}`，不要套 JSON 的 `=` 前缀。
 
