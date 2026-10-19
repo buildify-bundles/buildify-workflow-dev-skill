@@ -44,7 +44,7 @@ git clone https://gitee.com/buildify/buildify-workflow-dev-skill.git ~/.cursor/s
 | `SKILL.md` | 主入口：编排清单、画布硬规则、多段画布、项目/流程/服务器/凭证点选、HTTP 接口与试跑、失败告警、发布摘要 |
 | `install.md` | 把 `buildify-workflow-dev` 装到各客户端 skills 目录 |
 | `reference/cli.md` | `buildify` CLI 命令与退出码 |
-| `reference/flow-json.md` | 画布 JSON：`n-` + nanoid、`errors`、`direction`（TB/LR）、分组、边 relation、批注 |
+| `reference/flow-json.md` | 画布 JSON：`n-` + nanoid、`errors`、`direction`（TB/LR）、与控制台 `applyLayout.js` 对齐的间距 / 分组 / 多段 / 批注 |
 | `reference/expressions.md` | 按组件写表达式：JSON 默认 `={{msg.xxx}}`、SQL `#{}` `${}`、文本 `{{ }}`；JS 节点分段注释；飞书 `lark_md` 与失败原因 |
 | `reference/recipes.md` | 常见骨架 |
 | `reference/comment-node.md` | 批注节点字段 |

@@ -13,7 +13,7 @@ Markdown 便签，**不执行、不连线**。权威正文是 `parameters.commen
 | `id` | **`n-` + nanoid**，与执行节点同一套规则，本流程内唯一 |
 | `type` | `"comment"`（旧数据可能是 `"notes"`，读写同等对待） |
 | `zIndex` | `2` |
-| `style` | `{ "width": "280px", "height": "160px" }`（可按字数略调，约 180×88 起） |
+| `style` | `{ "width": "320px", "height": "220px" }`（与控制台新建批注一致；可按字数略调，最小 180×50） |
 | `data.name` | `"CommentNode"`（不要去 `bundle nodes` 里找这个名字） |
 | `data.label` | `"comment"` |
 | `data.summary` | `"批注"` |

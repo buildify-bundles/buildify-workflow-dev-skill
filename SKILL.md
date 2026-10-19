@@ -68,8 +68,8 @@ description: >-
 - **边**：同一对 source+target 只有一条边；接到同一下游的多个出口（如 Success+Failure）全部放进这条边的 `data.relations[]`。relation 对象从 `node-relations` 整份拷贝（至少 `name` + `label` + `description`）；MCP 自定义关系再带 `_id` / `icon` / `mcpKind`，并同步到源节点 `data.relations`。
 - **表达式**按字段 `uiComponent` 选语法：`JsonExpressionInput` 默认整字段 `"={{msg.xxx}}"` 保留类型，要拼字符串才写 `"=前缀 {{msg.xxx}}"`（`=` 必须是第一个字符，`{{ }}` 里不运算）；`SqlEditor` 用 `#{}` / `${}`；文本及其他用 `{{ }}`。见 [expressions.md](reference/expressions.md)。
 - **JS 节点** `parameters.code` 分段并写中文注释：顶部写入参/出参，每段用 `// --- 段名 ---` 隔开。
-- **批注默认不加。** 例外：每个 HTTP 接口一张（只写接口说明和访问地址）；用户要求；分支条件或调用约定在 `summary` 里写不下、不写会误用。放在被说明盒子外侧，不连线。
-- **分组默认不加。** 多于两段互不连线的逻辑（三段起）时每段一个框，或用户要求时才加。组内节点必须写 `parentNode`；框背景写 `groupColor: "#5b7c99"`、`groupOpacity: 0.06`（省略时控制台按 0.1 画，更深）。
+- **批注默认不加。** 例外：每个 HTTP 接口一张（只写接口说明和访问地址）；用户要求；分支条件或调用约定在 `summary` 里写不下、不写会误用。放在被说明盒子外侧、净空 **24**，不连线、不写 `parentNode`。控制台自动排版会让批注跟着最近的节点走。
+- **分组默认不加。** 多于两段互不连线的逻辑（三段起）时每段一个框，或用户要求时才加。组内节点必须写 `parentNode`；组内步进与画布相同，框留白左右 24、上 28、下 24，标题在框外高出 28；框背景写 `groupColor: "#5b7c99"`、`groupOpacity: 0.06`。
 - **两段及以上互不连线**时按下一节生成。
 
 ## 多段画布：分开生成再合并
@@ -96,7 +96,7 @@ description: >-
 - 不写顶层 `direction` / `errors` / `viewport`，不加批注和分组框
 - 不调用 save-draft / test-run / deploy，不改选项目或凭证
 
-**只有主代理写 `flow.json`。** 合并时：拼上各段 `nodes` / `edges`，检查 id 不重复、边不跨段；按 flow-json.md「多段并列」平移各段（同一深度共用流向坐标，层距取整图该层最大扇出）；顶层只写一份 `direction` 和 `errors`。然后由主代理加分组（多于两段时）和每个 HTTP 接口的批注，再照常做步骤 7–10。
+**只有主代理写 `flow.json`。** 合并时：拼上各段 `nodes` / `edges`，检查 id 不重复、边不跨段；按 flow-json.md「多段并列」平移各段（每段保留自己的层距，`TB` 顶齐、段间隙 64，`LR` 左齐、段间隙 72）；顶层只写一份 `direction` 和 `errors`。然后由主代理加分组（多于两段时）和每个 HTTP 接口的批注，再照常做步骤 7–10。
 
 ## 环境里没有对应节点
 
