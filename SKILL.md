@@ -331,7 +331,7 @@ buildify --json workflow deploy -p "$PROJ" -w "$WF" --worker "$WKR" \
 
 ### 汇报格式
 
-- 已保存、试跑、已发布都用下面的 Markdown 表格 + 状态图标，不要改成纯列表。
+- 概览（项目 / 流程 / 版本）用 Markdown 表。**状态图标不要写进表格单元格**：Cursor 等客户端的表格经常不渲染彩色 emoji，看起来像丢了。图标放在标题、以及服务器列表的**行首**。
 - 只用名称（项目名、流程名、版本名、`workerName`），不要甩 projectId / workerId / deploymentId，除非用户要排障。
 - 不要输出节点信息（链路、节点表、`label` / `summary` / 触发类型 / `webhookPath`），响应里有 `summary.nodes` 也忽略。HTTP 接口的访问地址例外。
 - 字段来自**这一次** `deploy --wait` 的返回，不要为了填表再请求。刚发布完不要调 `workflow published`；用户事后问线上版本时才用它画同一套表。
@@ -345,15 +345,13 @@ buildify --json workflow deploy -p "$PROJ" -w "$WF" --worker "$WKR" \
 | 流程 | 当前时间 API |
 | 版本号 | `v20261005-184620` |
 | 发布说明 | 首次上线 /test2 当前时间接口 |
-| 总体 | ✅ 成功 |
+| 总体 | 成功 |
 | 发布时间 | 2026-09-21 09:30:00 |
 | 访问地址 | `GET http://1.2.3.4:8080/test2` |
 
 ### 服务器
 
-| 服务器 | 描述 | 在线 | 部署 | 说明 |
-| --- | --- | --- | --- | --- |
-| 本地java进程测试 | 测试专用 | 🟢 在线 | ✅ 成功 | — |
+- 🟢 **本地java进程测试** — 测试专用 — 在线 — ✅ 成功
 
 ### 凭证
 
@@ -368,17 +366,23 @@ buildify --json workflow deploy -p "$PROJ" -w "$WF" --worker "$WKR" \
 | official/mysql | Mysql | 生产只读 |
 ```
 
-图标优先用响应里的 `deployStatusIcon` / `onlineIcon`，没有则按下表：
+图标优先用响应里的 `deployStatusIcon` / `onlineIcon`，没有则按下表。必须把字符写出来（如 `🟢`、`✅`），不要省略成只剩「在线」「成功」。
 
-| 含义 | 图标 | 何时 |
+| 含义 | 图标 | 写在哪 |
 | --- | --- | --- |
-| 成功 | ✅ | `deployStatus=success`；标题「已发布」 |
-| 成功有警告 | ⚠️ | `success_with_warnings`；标题「已发布（有警告）」 |
-| 失败 | ❌ | `failed`；标题「❌ 发布失败」，「部署」列写 `❌ 失败`，说明列写 `message` |
-| 超时 | ⏰ | `timeout` |
-| 部署中 / 待部署 | 🔄 / ⏳ | `running` / `pending` |
-| 已取消 | 🚫 | `canceled` |
-| 在线 / 离线 | 🟢 / ⚫ | `isOnline` |
+| 成功 | ✅ | 标题 `## ✅ 已发布`；服务器行末 `✅ 成功`。表里「总体」只写「成功」 |
+| 成功有警告 | ⚠️ | 标题「⚠️ 已发布（有警告）」 |
+| 失败 | ❌ | 标题 `## ❌ 发布失败`；服务器行 `❌ 失败`，后面跟 `message` |
+| 超时 | ⏰ | 标题和服务器行 |
+| 部署中 / 待部署 | 🔄 / ⏳ | 标题和服务器行 |
+| 已取消 | 🚫 | 标题和服务器行 |
+| 在线 / 离线 | 🟢 / ⚫ | 服务器行首：`🟢 **名称** — 描述 — 在线` |
+
+失败时标题用 `## ❌ 发布失败`，服务器写成一行，图标仍在行首：
+
+```markdown
+- ⚫ **mac** — 无描述 — 离线 — ❌ 失败 — connection refused
+```
 
 保存草稿后：
 
