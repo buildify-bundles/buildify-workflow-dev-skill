@@ -5,18 +5,18 @@
 ```bash
 buildify --json bundle list
 buildify --json bundle nodes -b official/core
-buildify --json bundle node-properties -b official/core -n WebhookTrigger
-buildify --json bundle node-relations  -b official/core -n WebhookTrigger
+buildify --json bundle node-properties -b official/core -n WebhookTriggerNode
+buildify --json bundle node-relations  -b official/core -n WebhookTriggerNode
 ```
 
-若环境里没有 `official/core` 或节点名不同，换成 `bundle list` / `bundle nodes` **实际返回**的值，不要臆造。
-当前工作区完全没有能覆盖需求的包或节点时：**不要用本文件的骨架硬编**，停下来请用户先用 `buildify-bundle-dev` 实现并发布，再回来编排。
-示例里的 `icon: COPY_FROM_BUNDLE_NODES` 必须换成 `bundle nodes` / `node-properties` 返回的 `icon` 字符串（如 `webhook.svg`），否则控制台节点图标不正确。
-`label` 从目录拷贝类型名；`summary` 按本流程职责自写且 **≤8 字**（画布默认显示它），不要照抄目录 `summary`。
-默认按顶层 `direction` 排，与控制台自动排版一致：卡片 **248×63**，第一张 `{x:45,y:24}`。**`TB` 竖排**：主链同一 x、`y += 153`（净空 90），兄弟 `x += 298`（净空 50）；上一层出度 2 时下一层 `y += 183`，出度 ≥3 时 `y += 199` 且兄弟 `x += 288`。**`LR` 横排**（用户要求或草稿已是横排）：主链同一 y、`x += 388`（净空 140），兄弟 `y += 135`（净空 72）；出度 ≥3 时下一层 `x += 418` 且兄弟 `y += 119`。不要按出口 label 个数再加长。能直连汇合再共用下游；否则各支路沿主方向继续排，必要时复制配置相同的节点，避免连线交叉。执行节点写 `sourcePosition` / `targetPosition`，与 `direction` 一致。
-边上的 `relations` 必须从 `node-relations` **整份拷贝**（至少 `name` + `label` + `description`）。**同一对 source+target 只有一条边**；接到同一下游的多个出口（如 Success+Failure）全部放进该边 `data.relations[]`，不要拆成两条边。MCP 自定义关系还要带 `_id` / `icon` / `mcpKind`，并写到源节点 `data.relations`。
-参数里的表达式按 `uiComponent` 写（JSON 默认 `"={{msg.xxx}}"` 保留类型，要字符串才 `"=前缀 {{msg.xxx}}"`，禁止 `this is ={{msg.title}}`；SQL `#{}` `${}`；文本 `{{ }}`），见 [expressions.md](expressions.md)。JS 节点 `code` **分段 + 中文注释**，不要写成无注释单行。不要把 Webhook 响应当成一个叫 `body` 的字段。
-**真正写入画布时，节点 `id` 用 `n-` + nanoid（如 `n-k7mX2pL9`，流程内唯一）**，不要照抄下面的 `trigger` / `work` / `reply`。顶层必写 `errors`（通过 `{}`，未通过 `"errors":{"n-k7mX2pL9":1}`）和 `direction`（默认 `"TB"`），见 [flow-json.md](flow-json.md)。下面骨架默认 `TB`；用户要横排时改成 `"direction": "LR"`，并按 [flow-json.md](flow-json.md)「画布排列」改坐标和锚点。
+照抄骨架前替换这些占位：
+
+- `official/core`、节点名、`REPLACE_ME` 版本：换成 `bundle list` / `bundle nodes` **实际返回**的值。环境里根本没有能覆盖需求的包时，不要用骨架硬编，按 SKILL「环境里没有对应节点」停下。
+- `icon: COPY_FROM_BUNDLE_NODES`：换成目录返回的 `icon`（如 `webhook.svg`）。
+- `trigger` / `work` / `reply` 这类 id：换成 `n-` + nanoid。
+- 骨架默认 `TB`；横排时改 `"direction": "LR"`，并按 [flow-json.md](flow-json.md)「画布排列」改坐标和锚点。
+
+字段、坐标、边的规则见 [flow-json.md](flow-json.md)，表达式见 [expressions.md](expressions.md)。不要把 Webhook 响应当成一个叫 `body` 的字段。
 
 ## 1. Webhook 触发 → 处理 → 应答
 
@@ -32,7 +32,7 @@ buildify --json bundle node-relations  -b official/core -n WebhookTrigger
       "sourcePosition": "bottom",
       "targetPosition": "top",
       "data": {
-        "name": "WebhookTrigger",
+        "name": "WebhookTriggerNode",
         "label": "Webhook",
         "summary": "接收请求",
         "icon": "COPY_FROM_BUNDLE_NODES",
@@ -109,7 +109,7 @@ buildify --json bundle node-relations  -b official/core -n WebhookTrigger
 }
 ```
 
-`type` / `name` 必须能在 `buildify project credentials -p <proj>` 里找到。选了「使用时再选」则不写该槽，校验 ERROR 写入 `errors` 后只 save-draft，不要试跑。改已有流程时沿用它所在的项目、这条流程、已绑定的服务器和草稿里已写的凭证；新建时用户没给的才问（见 SKILL「沿用已有，只问缺的」）。
+`type` / `name` 必须能在 `buildify project credentials -p <proj>` 里找到。选了「使用时再选」则不写该槽，见 SKILL「凭证」。
 
 `jsonValue` 是 `JsonExpressionInput`：默认整字段 `"={{msg.output}}"`，对象原样注入、类型保留。要拼成字符串才写 `"=[{{msg.output.type}}] {{msg.output.title}}"`。`=` 必须是引号内第一个字符，不要写成 `"this is ={{msg.title}}"`，花括号里不要空格。若改成纯文本响应（`outputType: text`，字段 `textValue`），变量写成 `{{msg.output.title}}`，不要套 JSON 的 `=` 前缀。
 
@@ -130,11 +130,7 @@ SELECT * FROM ${msg.output.table}
 WHERE id = #{msg.output.id}
 ```
 
-坐标按 `direction`：默认 **`TB` 竖排**（主链 x=45，y=24 起每步 +153；兄弟 x 相差 298）。用户要横排或草稿已是 `LR` 时用 **`LR`**（主链 y=24，x=45 起每步 +388；兄弟 y 相差 135），并写 `sourcePosition` / `targetPosition`。不要把 `TB` 排成一条横线，也不要把 `LR` 排成一列竖线。出度达到扇出时按 [flow-json.md](flow-json.md) 加长下一层，不要收到比那组净空更短。
-同一张画布上有**两段及以上互不连线**的流程（如两个独立接口）时，段内仍用上面的步进；段与段之间按外接矩形错开（`TB` 顶对齐、下一段 x = 上一段最右外缘 + 50；`LR` 左对齐、下一段 y = 上一段最下外缘 + 72）。同一深度共用流向坐标。见 [flow-json.md](flow-json.md)「多段并列」。
-**多于两段**时，合并后再给每段加分组框（背景 `groupOpacity: 0.06`）。两段及以下默认不加分组。每个 HTTP 接口加一张批注，只写接口说明和访问地址。其余批注仍默认不加，仅当用户要求或分支/`summary` 写不下的关键约定不写会误用时才加。批注按自身宽高留在外侧（单段 `TB`：`x = 最左外缘 - 宽 - 80`；单段 `LR`：`y = 最上外缘 - 高 - 80`），外缘含分组框。分组时组内节点必须写 `parentNode`；框外节点按框外缘留空，不要用卡片步进贴着框。见 [flow-json.md](flow-json.md)。
-
-HTTP 接口的入口验证优先用触发器「入站认证」`authType`（`none` / `httpBasic` / `apiKey` / `jwtAuth`）。表单没有该字段时，才在下游单独加校验节点。IP 限制写 `options.acl`。不要在触发器已经校验之后再加一个做同样事情的节点。
+坐标按 `direction` 排，见 [flow-json.md](flow-json.md)「画布排列」。不要把 `TB` 排成一条横线，也不要把 `LR` 排成一列竖线。
 
 ## 3. 分支：必要时复制节点
 
@@ -203,40 +199,4 @@ buildify --json workflow save-draft -p "$PROJ" -w "$WF" -f ./flow.json
 
 ## 5. 节点分组
 
-**多于两段**互不连线的独立逻辑，或用户要求分组时：先放 `type: "group"` 的布局框，组内每个组件写 `parentNode` 指向框的 `id`。只重叠坐标不算分组。刚好两段默认不加框。组内留白，不要贴边：首节点 `{ "x": 40, "y": 60 }`；组内更紧（`TB` 时 `y += 119`、兄弟 `x += 292`，`LR` 时 `x += 344`、兄弟 `y += 111`）。框宽高包住卡片再留边距：`width = max(子节点右缘 + 40, 315)`，`height = max(子节点下缘 + 36, 162)`（单节点 328×162）。框外下一节点按外缘留空：竖向 `框 y + height + 90`，`LR` 沿流向 `框 x + width + 140`。不要用组内步进从框里的卡片接着排，否则会压进框里。
-
-背景默认淡一点：`groupColor` `"#5b7c99"`，`groupOpacity` **`0.06`**（不要省略，省略时控制台按 0.1 画得更深）。多组可换色相，透明度仍用 0.06。
-
-```json
-{
-  "id": "2",
-  "type": "group",
-  "position": { "x": 45, "y": 24 },
-  "style": { "width": "328px", "height": "162px" },
-  "data": {
-    "name": "GroupNode",
-    "label": "group",
-    "summary": "上报",
-    "isLayoutNode": true,
-    "parameters": {
-      "groupLabel": "上报",
-      "groupColor": "#5b7c99",
-      "groupOpacity": 0.06,
-      "groupRadius": 12,
-      "groupBorderStyle": "dotted",
-      "groupBorderWidth": 1
-    }
-  }
-}
-```
-
-```json
-{
-  "id": "2a",
-  "data": { "label": "child node" },
-  "position": { "x": 40, "y": 60 },
-  "parentNode": "2"
-}
-```
-
-真正写入时 `id` 换成 `n-` + nanoid；`2a` 补齐业务节点字段，建议 `"extent": "parent"`。边连业务节点，不连分组框。细则见 [flow-json.md](flow-json.md)「节点分组」。
+多于两段互不连线的独立逻辑，或用户要求分组时才加。分组框和组内节点的完整形状、留白、框外间距都在 [flow-json.md](flow-json.md)「节点分组」，直接照那里写，不要在这里另抄一份。

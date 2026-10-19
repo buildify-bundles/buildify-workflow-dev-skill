@@ -123,7 +123,7 @@ TB（出度 2，下一层净空 120）          LR（出度 2，层距不加长�
 | `data.credentials` | 视表单 | 对象：`{ "<槽名>": { "type": "PascalCase", "name": "实例名" } }`。`type`/`name` 必须来自用户从 `project credentials` 点选的那条，禁止默认第一条或编造 |
 | `data.icon` | **建议** | 从 `bundle nodes`（或 `node-properties`）该项的 `icon` **原样拷贝**。通常是 `webhook.svg` 这种文件名，控制台靠它显示节点图标。不要改写成 OSS URL，也不要省略 |
 | `data.label` | 建议 | 从目录 `label` **原样拷贝**节点类型名（如「Webhook」「JS 函数」）。不要把本流程职责写到这里 |
-| `data.summary` | **建议** | 画布**默认显示**此字段。写该节点在**本流程**中的职责，**≤8 字**（最长 10 字）。不要照抄目录通用 `summary`，也不要写路径、SQL、字段名 |
+| `data.summary` | **建议** | 画布**默认显示**此字段。写该节点在**本流程**中的职责，**≤8 字**。不要照抄目录通用 `summary`，也不要写路径、SQL、字段名 |
 | `data.isTrigger` | 建议 | 触发器写 `true`；目录里 `isTrigger: true` 的节点必须标上 |
 | `data.disabled` | 否 | `true` 时跳过执行 |
 | `data.isLayoutNode` | 否 | `true` 时解析器忽略（分组框、**批注**），不要给业务节点加这个 |
@@ -195,7 +195,7 @@ Markdown 便签，**默认不要加**。没有对外 HTTP 接口时，流程只�
 - 单段 `TB`：放在最左外缘的左侧。`x = 最左外缘 - 批注宽 - 80`，`y` 与被说明盒子的顶边对齐。右缘和最左盒子之间空出 **80**
 - 单段 `LR`：放在最上外缘的上方。`y = 最上外缘 - 批注高 - 80`，`x` 与被说明盒子的左缘对齐。底边和最上盒子之间空出 **80**
 
-算出来 `x < 40` 或 `y < 40` 时，只把**顶层**节点（自由节点、分组框、批注）平移，使批注落在 40。组内 `position` 是相对框的，不要跟着加这份平移。
+算出的批注 `x < 40` 或 `y < 24` 时，只把**顶层**节点（自由节点、分组框、批注）整体平移，使最靠外的批注落在 `x = 40` / `y = 24`。组内 `position` 是相对框的，不要跟着加这份平移。
 
 `zIndex: 2`。不要写 `sourcePosition` / `targetPosition`，不要写 `parentNode`。无分支、主链 `x=45`、`y=24`、批注 280×160 时，先算出 `x = 45 - 280 - 80 = -315`，再把顶层整体右移，使批注落在 `{ "x": 40, "y": 24 }`，主链因此到 `x = 400`。字多把宽高加大后，用同一公式重算。
 
@@ -348,7 +348,7 @@ Markdown 便签，**默认不要加**。没有对外 HTTP 接口时，流程只�
 
 规则：
 
-- **多个出口 → 同一下游**：一条边，`relations` 里放多项（如 Success + Failure 都接到下一节点）。这些 label 叠在同一条线的中点，把这条边按「画布排列」加长，不要拆边。
+- **多个出口 → 同一下游**：一条边，`relations` 里放多项（如 Success + Failure 都接到下一节点）。出口文字由控制台摆放，不要拆边，也不要为此加长步进。
 - **多个出口 → 不同下游**：每个 target 一条边，各自 `relations` 只含该支路的出口。目标放在下一层的不同列/行，让每条边的中点分开，label 才能对上自己那条线。
 - 禁止两条边共用同一 `source` + `target`。
 - 普通成功路径只用源节点目录里的成功项（通常 `name=Success`，`label=成功`）。
@@ -413,7 +413,7 @@ MCP 自定义出口示例（源节点 `data.relations` 与边上都要同一份�
       "sourcePosition": "bottom",
       "targetPosition": "top",
       "data": {
-        "name": "WebhookTrigger",
+        "name": "WebhookTriggerNode",
         "bundleName": "official/core",
         "bundleVersion": "1.0.0",
         "isTrigger": true,
@@ -454,8 +454,7 @@ MCP 自定义出口示例（源节点 `data.relations` 与边上都要同一份�
 }
 ```
 
-普通节点的输出在 payload 里包一层 `output`；触发器的 payload 在根级。占位名用 `msg`，不要用 `$json`。
-**表达式按字段 `uiComponent` 写**：JSON（`JsonExpressionInput`）默认整字段 `"={{msg.xxx}}"` 以保留类型，要拼成字符串才写 `"=前缀 {{msg.xxx}}"`（禁止 `"this is ={{msg.title}}"`）；SQL（`SqlEditor`）用 `#{msg.xxx}` / `${msg.xxx}`；文本及其他用 `{{msg.xxx}}`。JS 节点 `code` 分段并加中文注释。见 [expressions.md](expressions.md)。
+普通节点的输出在 payload 里包一层 `output`；触发器的 payload 在根级。占位名用 `msg`，不要用 `$json`。参数里的表达式按字段 `uiComponent` 选语法，JS 节点 `code` 分段加中文注释，见 [expressions.md](expressions.md)。
 
 ## 校验顺序
 

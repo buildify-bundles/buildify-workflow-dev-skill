@@ -41,11 +41,11 @@ git clone https://gitee.com/buildify/buildify-workflow-dev-skill.git ~/.cursor/s
 
 | 文件 | 内容 |
 |---|---|
-| `SKILL.md` | 主入口：编排清单、多段画布、HTTP 接口、项目/流程/服务器/凭证点选、发布摘要 |
+| `SKILL.md` | 主入口：编排清单、画布硬规则、多段画布、项目/流程/服务器/凭证点选、HTTP 接口与试跑、失败告警、发布摘要 |
 | `install.md` | 把 `buildify-workflow-dev` 装到各客户端 skills 目录 |
 | `reference/cli.md` | `buildify` CLI 命令与退出码 |
 | `reference/flow-json.md` | 画布 JSON：`n-` + nanoid、`errors`、`direction`（TB/LR）、分组、边 relation、批注 |
-| `reference/expressions.md` | 按组件写表达式：JSON 默认 `={{msg.xxx}}`、SQL `#{}` `${}`、文本 `{{ }}`；JS 节点分段注释 |
+| `reference/expressions.md` | 按组件写表达式：JSON 默认 `={{msg.xxx}}`、SQL `#{}` `${}`、文本 `{{ }}`；JS 节点分段注释；飞书 `lark_md` 与失败原因 |
 | `reference/recipes.md` | 常见骨架 |
 | `reference/comment-node.md` | 批注节点字段 |
 
@@ -64,4 +64,4 @@ buildify --json key test
 
 ## 使用
 
-对话里提到编排流程、发布 flow、批注、节点分组、横排/竖排、连线标签、多段、独立接口、入口验证、接口说明、访问地址，或显式 `/buildify-workflow-dev` 即可触发。
+对话里提到编排流程、工作流、试跑、发布、Webhook 接口、凭证、批注、节点分组、横排/竖排、入站认证、访问地址、飞书卡片、失败告警，或显式 `/buildify-workflow-dev` 即可触发。

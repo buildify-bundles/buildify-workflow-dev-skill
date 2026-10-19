@@ -106,6 +106,26 @@ return {
 
 逻辑多于取值+返回时，再拆「校验」「转换」「组装」等段。字段名、默认值、为什么跳过某分支，写在对应行旁边。写入画布时把上述脚本放进 `parameters.code`（字符串，保留换行）。
 
+## 飞书卡片与失败原因
+
+飞书 `SendCardMsg` 的正文若是 `{"tag":"div","text":{"tag":"lark_md","content":"…"}}`，`lark_md` 只稳定支持加粗、换行、链接。`###` 和行首 `- ` 会原样出现在卡片上。钉钉互动卡片可以继续用标题和列表，不要和飞书共用同一段 Markdown。
+
+| 渠道 | 字段 | 正文 |
+|---|---|---|
+| 钉钉互动卡片 | `cardText` | `###`、`**加粗**`、`- ` 列表 |
+| 飞书卡片 | `feishuText` | 只有 `**加粗**` 和换行，卡片里 `"content": "={{msg.feishuText}}"` |
+| 失败告警 | 用户点名的那一路 | header `template` 用 `red`；渠道没点名先问，不要把成功通知全部复制过去 |
+
+`HttpRequestNode` 的 Failure 在上游字段之外带 `msg.error`：
+
+| 字段 | 含义 |
+|---|---|
+| `msg.error.code` | 如 `HTTP_IO_ERROR` |
+| `msg.error.message` | 如 `ConnectException` |
+| `msg.error.statusCode` | 有 HTTP 状态时才有 |
+
+连接失败或超时通常没有 `msg.output.statusCode`。告警文案写成 `code` + `message`。
+
 ## 布尔（If / Switch）
 
 ```
