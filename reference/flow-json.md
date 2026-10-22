@@ -475,7 +475,7 @@ MCP 自定义出口示例（源节点 `data.relations` 与边上都要同一份�
 3. `data.parameters` 对照 `properties_json`（未知键、缺必填、枚举非法）
 4. `edges[].data.relations[].name` 对照源节点 `relations_json`
 5. `data.credentials` 对照项目里已有凭证（`bundleName + type + name`）
-6. 图：至少一个触发器、孤立节点、环。**环允许**，不要当错误去拆边；缺触发器和孤立节点仍要修
+6. 图：至少一个触发器、孤立节点、环。**环允许**，不要当错误去拆边；编排时确认环上有离开循环的出口（见 SKILL「循环允许，但必须有出口」）。缺触发器和孤立节点仍要修
 7. 展示：目录里有 `icon` 但画布 `data.icon` 为空时记 **WARNING**（控制台节点图标会丢）
 8. 展示：边上 `relations[]` 缺 `label`（或自定义关系缺 `icon` / `_id`）时记 **WARNING**（控制台出口文字/图标会丢）
 
