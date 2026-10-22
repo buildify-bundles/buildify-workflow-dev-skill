@@ -65,6 +65,7 @@ description: >-
 - **节点字段**：`name` / `bundleName` / `bundleVersion` / `icon` / `label` / `isTrigger` 从 `bundle nodes` / `node-properties` 原样拷贝，不要编造图标 URL。`summary` 写这颗节点在本流程里的职责，**≤8 字**（如「接收请求」「查询设备」），画布默认显示它，不要照抄目录 `summary`。
 - **坐标**：按 `direction` 排，与控制台自动排版一致（卡片 248×63，首张 `{x:45,y:24}`；`TB` 主链 `y += 153`，`LR` 主链 `x += 388`），执行节点写 `sourcePosition` / `targetPosition`。扇出加长和兄弟间距见 flow-json.md「画布排列」。不要按出口 label 个数加长，也不要收得比表里更短。
 - **分支**：以不交叉为准。能沿流向干净汇合才共用下游；否则各支路复制一份配置相同的节点（新 id）。不要复制触发器。
+- **循环允许**：用户要重试、轮询、等到条件满足时，从下游出口连回上游入口即可。不要为了消环拆边或复制节点。回连由控制台绕线，节点仍按主链排，不要把下游再挪到上游旁边。
 - **边**：同一对 source+target 只有一条边；接到同一下游的多个出口（如 Success+Failure）全部放进这条边的 `data.relations[]`。relation 对象从 `node-relations` 整份拷贝（至少 `name` + `label` + `description`）；MCP 自定义关系再带 `_id` / `icon` / `mcpKind`，并同步到源节点 `data.relations`。
 - **表达式**按字段 `uiComponent` 选语法：`JsonExpressionInput` 默认整字段 `"={{msg.xxx}}"` 保留类型，要拼字符串才写 `"=前缀 {{msg.xxx}}"`（`=` 必须是第一个字符，`{{ }}` 里不运算）；`SqlEditor` 用 `#{}` / `${}`；文本及其他用 `{{ }}`。见 [expressions.md](reference/expressions.md)。
 - **JS 节点** `parameters.code` 分段并写中文注释：顶部写入参/出参，每段用 `// --- 段名 ---` 隔开。
@@ -233,7 +234,9 @@ description: >-
 
 ## 校验闭环（步骤 7）
 
-`workflow validate` 退出码 4 表示还有 ERROR。按 `issues[].path` / `issues[].nodeId` 定位，对照 `node-properties` 修 `data.parameters`，重跑直到 `valid: true`。不要跳过校验直接试跑。
+`workflow validate` 退出码 4 表示还有 ERROR。按 `issues[].path` / `issues[].nodeId` 定位，对照 `node-properties` 修 `data.parameters`，重跑直到表单类 ERROR 清掉。不要跳过校验直接试跑。
+
+**图里的环不算限制。** `issues` 里出现「环」/ cycle 时不要改边去消掉。出口连回上游入口是合法循环（重试、轮询、等到条件满足）。只剩环导致 `valid: false` 时，照常 save-draft、试跑、发布。缺触发器、孤立节点、表单 ERROR 仍要修。
 
 每次校验后把表单 ERROR **写回画布顶层 `errors`**：全部通过 `"errors":{}`；未通过按节点 id 汇总，如 `"errors":{"n-k7mX2pL9":1}`（value 是该节点未通过字段数，不计 WARNING）。用户明确稍后自填或选了「使用时再选」时，也要写入当前汇总再 save-draft，不要为了消掉凭证 ERROR 去猜一条凭证。
 

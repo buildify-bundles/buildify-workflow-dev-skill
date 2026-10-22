@@ -65,7 +65,7 @@ buildify --json config profiles
 | `project workers -p ID [--online-only]` | 服务器（worker）列表，含 `workerName` / `remark` / 在线状态 / `externalHost` / `httpPort`。给用户看时写 **workerName — 描述 — 在线/离线**（`remark` 为空写「无描述」），不展示 hostname |
 | `workflow list / create` | 流程 |
 | `workflow get-draft / save-draft` | 草稿；save-draft 自动先读 `version` |
-| `workflow validate -p ID -f flow.json` | 无副作用语义校验；有 ERROR 时退出 4 |
+| `workflow validate -p ID -f flow.json` | 无副作用语义校验；有 ERROR 时退出 4。图里的环允许，不要拆边去消；只剩环时仍可 save-draft / 试跑 / 发布 |
 | `workflow test-run -p ID -f flow.json --worker wkr_… [--timeout 60]` | 阻塞直到完成或超时，默认跑整张图。用户明确要单节点时才加 `--start-node` 和 `--inputs` |
 | `workflow cancel-test --execution-id … --worker …` | 取消试跑 |
 | `workflow deploy -p ID -w WF --worker wkr_… --version-name … [--remark 说明] --wait` | 发布已 save-draft 的草稿。不要再传 `-f` |
@@ -82,8 +82,8 @@ buildify --json config profiles
 
 ```bash
 buildify --json workflow validate -p "$PROJ" -f ./flow.json
-# 退出码 4：读 issues，改 data.parameters，按节点 id 把 ERROR 数写进顶层 errors（如 {"n-k7mX2pL9":1}），再校验
-# valid=true：写入 "errors": {}
+# 退出码 4：读 issues。表单 ERROR 改 data.parameters 再校验；「环」不要拆边，其余清掉即可 save-draft
+# 表单通过：errors 只汇总仍未通过的表单字段（环不写入 errors）
 buildify --json workflow save-draft -p "$PROJ" -w "$WF" -f ./flow.json
 buildify --json workflow test-run -p "$PROJ" -f ./flow.json --worker "$WKR" --timeout 60
 buildify --json workflow deploy -p "$PROJ" -w "$WF" --worker "$WKR" \
