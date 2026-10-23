@@ -14,9 +14,17 @@ buildify --json bundle node-relations  -b official/core -n WebhookTriggerNode
 - `official/core`、节点名、`REPLACE_ME` 版本：换成 `bundle list` / `bundle nodes` **实际返回**的值。环境里根本没有能覆盖需求的包时，不要用骨架硬编，按 SKILL「环境里没有对应节点」停下。
 - `icon: COPY_FROM_BUNDLE_NODES`：换成目录返回的 `icon`（如 `webhook.svg`）。
 - `trigger` / `work` / `reply` 这类 id：换成 `n-` + nanoid。
-- 骨架默认 `TB`；横排时改 `"direction": "LR"`，并按 [flow-json.md](flow-json.md)「画布排列」改坐标和锚点。
+- 骨架默认 `TB`；横排时改 `"direction": "LR"`。
+- 骨架里的 `position` / `sourcePosition` / `targetPosition` 只是示例值，以排版脚本的输出为准。
 
-字段、坐标、边的规则见 [flow-json.md](flow-json.md)，表达式见 [expressions.md](expressions.md)。不要把 Webhook 响应当成一个叫 `body` 的字段。
+**先连线，最后统一排版**：写好节点和边（坐标可以不写），再跑一次脚本，然后进入校验：
+
+```bash
+node <skill 目录>/scripts/layout.mjs ./flow.json      # 写回坐标、锚点、分组尺寸
+buildify --json workflow validate -p "$PROJ" -f ./flow.json
+```
+
+字段、排版、边的规则见 [flow-json.md](flow-json.md)，表达式见 [expressions.md](expressions.md)。不要把 Webhook 响应当成一个叫 `body` 的字段。
 
 ## 1. Webhook 触发 → 处理 → 应答
 
@@ -130,7 +138,7 @@ SELECT * FROM ${msg.output.table}
 WHERE id = #{msg.output.id}
 ```
 
-坐标按 `direction` 排，见 [flow-json.md](flow-json.md)「画布排列」。不要把 `TB` 排成一条横线，也不要把 `LR` 排成一列竖线。
+坐标交给排版脚本，见 [flow-json.md](flow-json.md)「画布排列」。
 
 ## 3. 分支：必要时复制节点
 
@@ -163,7 +171,7 @@ WHERE id = #{msg.output.id}
 
 成功/失败（或多出口）各自还要做同一件事、且接到**不同**下游时，**不要**把两边绕到同一个节点上交叉。每条支路复制一份相同配置的节点，沿主方向继续排；每条边的 `relations` 只含该支路的出口。
 
-`TB` 竖排（判断在 y=24，下一层净空 120，兄弟净空 50；返回是出度 1，再走净空 90）：
+排版脚本跑完的样子如下（手算兜底时也按这个写）。`TB` 竖排（判断在 y=24，下一层净空 120，兄弟净空 50；返回是出度 1，再走净空 90）：
 
 ```
                  [判断]  x=194 y=24
@@ -190,13 +198,23 @@ WHERE id = #{msg.output.id}
 
 ```bash
 buildify --json workflow get-draft -p "$PROJ" -w "$WF" > draft.json
-# 取出 data.workflowJson 作为画布，改完后：
+# 取出 data.workflowJson 作为画布 flow.json，改完后：
+node <skill 目录>/scripts/layout.mjs ./flow.json   # 只在增删了节点/边或用户要求重排时
 buildify --json workflow validate -p "$PROJ" -f ./flow.json
 buildify --json workflow save-draft -p "$PROJ" -w "$WF" -f ./flow.json
 ```
 
-不要从空模板覆盖已有草稿，除非用户明确要求重写。改节点职责时同步改 `data.summary`（仍 ≤8 字）。沿用草稿的 `direction`，不要仅为改排列而大挪已有节点；用户要求重排或改方向时再对齐。
+不要从空模板覆盖已有草稿，除非用户明确要求重写。改节点职责时同步改 `data.summary`（仍 ≤8 字）。沿用草稿的 `direction`。排版脚本会按自动排列重排整张画布，所以只在增删了节点 / 边、或用户要求重排 / 改方向（`--direction`）时跑，并告诉用户；用户手动调过布局时先问。只改参数不要跑。
 
 ## 5. 节点分组
 
-多于两段互不连线的独立逻辑，或用户要求分组时才加。分组框和组内节点的完整形状、留白、框外间距都在 [flow-json.md](flow-json.md)「节点分组」，直接照那里写，不要在这里另抄一份。
+多于两段互不连线的独立逻辑，或用户要求分组时才加。只写分组框的基础字段和组内节点的 `parentNode`，框的位置、宽高（标题在框内，上留白 68，组内回连自动加宽）和组内坐标交给排版脚本。字段形状见 [flow-json.md](flow-json.md)「节点分组」，不要在这里另抄一份。
+
+三段各一个框时，第 i 段的框写粗略原点 `TB` `{x: i*1000, y: 0}`（`LR` `{x: 0, y: i*1000}`），子节点不写坐标，跑完脚本即可：
+
+```json
+{ "id": "n-Gq3aT9xK", "type": "group", "position": { "x": 1000, "y": 0 },
+  "data": { "name": "GroupNode", "label": "group", "summary": "查询", "isLayoutNode": true,
+            "parameters": { "groupLabel": "查询", "groupColor": "#5b7c99", "groupOpacity": 0.06,
+                            "groupRadius": 12, "groupBorderStyle": "dotted", "groupBorderWidth": 1.5 } } }
+```

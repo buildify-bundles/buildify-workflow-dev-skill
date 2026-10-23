@@ -73,11 +73,13 @@ git clone --depth 1 https://github.com/buildify-bundles/buildify-workflow-dev-sk
 ```bash
 test -f "$DEST/SKILL.md"
 test -d "$DEST/reference"
+test -f "$DEST/scripts/layout.mjs"
+test -f "$DEST/scripts/vendor/dagre.min.js"
 grep -E '^name: buildify-workflow-dev$' "$DEST/SKILL.md"
 ls "$DEST/reference"
 ```
 
-必须能看到 `cli.md`、`flow-json.md`、`expressions.md`、`recipes.md`、`comment-node.md`。缺了就告诉用户路径和 `ls` 结果，不要假装成功。
+必须能看到 `cli.md`、`flow-json.md`、`expressions.md`、`recipes.md`、`comment-node.md`，以及排版脚本 `scripts/layout.mjs` 和 `scripts/vendor/dagre.min.js`。缺了就告诉用户路径和 `ls` 结果，不要假装成功。
 
 ## 5. 依赖
 
@@ -95,6 +97,8 @@ buildify --json key test
 
 本 CLI 不能创建密钥。不要把密钥写入 `.env`、仓库或后续回复。
 
+4. 可选：`node --version`，18 及以上即可跑排版脚本（不用 `npm install`），用 `node "$DEST/scripts/layout.mjs" --help` 确认。没有 Node 或版本太低时只提示一句：编排时会改用手算坐标，排版可能和控制台「自动排列」略有出入。不要替用户装 Node。
+
 ## 6. 汇报
 
-每个客户端一行，路径写绝对路径：装到了哪里、`SKILL.md` 是否确认、`buildify-cli` 与 API 密钥的状态。下一步是新开对话，提到编排流程，或输入 `/buildify-workflow-dev`。当前对话可能还没刷新 skill 列表。不要在这时开始编流程。
+每个客户端一行，路径写绝对路径：装到了哪里、`SKILL.md` 是否确认、`buildify-cli` 与 API 密钥的状态、Node（排版脚本）是否可用。下一步是新开对话，提到编排流程，或输入 `/buildify-workflow-dev`。当前对话可能还没刷新 skill 列表。不要在这时开始编流程。

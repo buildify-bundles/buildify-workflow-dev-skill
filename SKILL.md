@@ -31,7 +31,7 @@ description: >-
 - [ ] 3. 定服务器；画布方向默认 TB，试跑通过后默认发布
 - [ ] 4. 发现节点：bundle list → bundle nodes → 只对要放进画布的节点拉 node-properties / node-relations
 - [ ] 5. 凭证：只问空槽，三选一
-- [ ] 6. 生成 flow.json（见「生成画布 JSON」）
+- [ ] 6. 生成 flow.json：先写节点和连线，再 node scripts/layout.mjs 统一排版（见「生成画布 JSON」）
 - [ ] 7. workflow validate 闭环，ERROR 按节点写回顶层 errors
 - [ ] 8. save-draft（新建先 workflow create）
 - [ ] 9. test-run（HTTP 接口先测访问地址，见「试跑 HTTP 接口」）
@@ -51,7 +51,7 @@ description: >-
 | 场景 | 读 |
 |---|---|
 | 命令、参数、退出码、推荐循环、save-draft 冲突 | [reference/cli.md](reference/cli.md) |
-| 画布 JSON 字段、坐标步进、边、批注、分组、多段并列、校验顺序 | [reference/flow-json.md](reference/flow-json.md) |
+| 画布 JSON 字段、排版脚本、边、批注、分组、多段并列、校验顺序 | [reference/flow-json.md](reference/flow-json.md) |
 | 参数里的表达式（按 `uiComponent`）、JS 代码注释、飞书卡片与失败原因 | [reference/expressions.md](reference/expressions.md) |
 | 批注节点字段、HTTP 接口批注正文 | [reference/comment-node.md](reference/comment-node.md) |
 | 常见骨架：Webhook 应答、定时落库、分支复制、改已有、分组 | [reference/recipes.md](reference/recipes.md)（节点名仍须用 CLI 核实） |
@@ -60,17 +60,32 @@ description: >-
 
 按 [flow-json.md](reference/flow-json.md) 写。下面是最容易写错的硬规则；坐标数值的细则只在 flow-json.md。
 
+**先连线，最后统一排版。** 坐标不要手算：
+
+1. 写齐 `nodes`（业务字段、`parentNode`）和 `edges`，顶层写 `direction` 和 `errors`。执行节点的 `position` 可以不写。
+2. 结构定下来后运行本 skill 目录下的排版脚本（需要 Node 18+，不用装依赖）：
+
+   ```bash
+   node <本 skill 目录>/scripts/layout.mjs ./flow.json            # 原地写回
+   node <本 skill 目录>/scripts/layout.mjs ./flow.json --check    # 只检查，坐标要变时退出 1
+   ```
+
+   脚本移植自控制台「自动排列」（`applyLayout.js`），算出的执行节点坐标、锚点、分组框尺寸、批注位置与控制台一致。退出码 3 是图结构有错（边指向不存在的节点、连到分组框或批注、`parentNode` 不是分组框），按提示修好再跑。
+3. 之后每次增删节点或边、改 `parentNode`、换方向（`--direction TB|LR`），都重新跑一次，再进入步骤 7。
+
+改已有草稿：只在用户要求重排、或增删了节点 / 边时才跑，并告诉用户整张画布会按自动排列重排。用户手动调过布局时先问再跑。没有 Node 时按 flow-json.md「手算兜底」写坐标。
+
 - **节点 id**：每个新节点（含批注、分组框、复制出来的节点）用 `n-` + 8 位 nanoid，流程内唯一。不要用 `n1` / `trigger` 这类可读名。已有草稿的旧 id 不要改。边 `id` = `{source}_{target}`。
 - **顶层**：必写 `direction`（默认 `TB`；用户要横排才 `LR`；改已有沿用草稿）和 `errors`（先 `{}`）。
 - **节点字段**：`name` / `bundleName` / `bundleVersion` / `icon` / `label` / `isTrigger` 从 `bundle nodes` / `node-properties` 原样拷贝，不要编造图标 URL。`summary` 写这颗节点在本流程里的职责，**≤8 字**（如「接收请求」「查询设备」），画布默认显示它，不要照抄目录 `summary`。
-- **坐标**：按 `direction` 排，与控制台自动排版一致（卡片 248×63，首张 `{x:45,y:24}`；`TB` 主链 `y += 153`，`LR` 主链 `x += 388`），执行节点写 `sourcePosition` / `targetPosition`。扇出加长和兄弟间距见 flow-json.md「画布排列」。不要按出口 label 个数加长，也不要收得比表里更短。
+- **坐标**：交给排版脚本。`position`、`sourcePosition` / `targetPosition`、分组框 `style` 宽高都由脚本写，不要在脚本输出后再手动挪动。只有批注和多段时要给粗略的初始坐标，见 flow-json.md「画布排列」。
 - **分支**：以不交叉为准。能沿流向干净汇合才共用下游；否则各支路复制一份配置相同的节点（新 id）。不要复制触发器。
 - **循环允许，但必须有出口。** 用户要重试、轮询、等到条件满足时，从下游出口连回上游入口即可。不要为了消环拆边或复制节点。回连由控制台绕线，节点仍按主链排，不要把下游再挪到上游旁边。环上至少要有一条边离开循环（If / Switch 的另一支、失败出口、次数用尽、超时等）。所有出口都连回环内就是死循环：补上退出条件再保存，条件不清楚就问用户。
 - **边**：同一对 source+target 只有一条边；接到同一下游的多个出口（如 Success+Failure）全部放进这条边的 `data.relations[]`。relation 对象从 `node-relations` 整份拷贝（至少 `name` + `label` + `description`）；MCP 自定义关系再带 `_id` / `icon` / `mcpKind`，并同步到源节点 `data.relations`。
 - **表达式**按字段 `uiComponent` 选语法：`JsonExpressionInput` 默认整字段 `"={{msg.xxx}}"` 保留类型，要拼字符串才写 `"=前缀 {{msg.xxx}}"`（`=` 必须是第一个字符，`{{ }}` 里不运算）；`SqlEditor` 用 `#{}` / `${}`；文本及其他用 `{{ }}`。见 [expressions.md](reference/expressions.md)。
 - **JS 节点** `parameters.code` 分段并写中文注释：顶部写入参/出参，每段用 `// --- 段名 ---` 隔开。
-- **批注默认不加。** 例外：每个 HTTP 接口一张（只写接口说明和访问地址）；用户要求；分支条件或调用约定在 `summary` 里写不下、不写会误用。放在被说明盒子外侧、净空 **24**，不连线、不写 `parentNode`。控制台自动排版会让批注跟着最近的节点走。
-- **分组默认不加。** 多于两段互不连线的逻辑（三段起）时每段一个框，或用户要求时才加。组内节点必须写 `parentNode`；组内步进与画布相同，框留白左右 24、上 28、下 24，标题在框外高出 28；框背景写 `groupColor: "#5b7c99"`、`groupOpacity: 0.06`。
+- **批注默认不加。** 例外：每个 HTTP 接口一张（只写接口说明和访问地址）；用户要求；分支条件或调用约定在 `summary` 里写不下、不写会误用。不连线、不写 `parentNode`。初始坐标写在被说明节点的外侧（`TB` 左侧、`LR` 上方），排版脚本会让它跟着最近的节点走，并把整张画布挪进可视区。
+- **分组默认不加。** 多于两段互不连线的逻辑（三段起）时每段一个框，或用户要求时才加。组内节点必须写 `parentNode`；框的宽高和组内坐标交给脚本（标题在框内，上留白 68，有回连时自动加宽）；框背景写 `groupColor: "#5b7c99"`、`groupOpacity: 0.06`。
 - **两段及以上互不连线**时按下一节生成。
 
 ## 多段画布：分开生成再合并
@@ -92,12 +107,12 @@ description: >-
 
 每段交给一个 `generalPurpose` 子任务，只返回 `{ "nodes": [], "edges": [] }`：
 
-- 坐标从局部原点 `(0, 0)` 起，段内按 flow-json.md「画布排列」步进，不加 45/24 边距
+- 不算坐标，`position` 不写（主代理合并后统一排版）
 - 只用分配的 id，边只连本段节点
 - 不写顶层 `direction` / `errors` / `viewport`，不加批注和分组框
 - 不调用 save-draft / test-run / deploy，不改选项目或凭证
 
-**只有主代理写 `flow.json`。** 合并时：拼上各段 `nodes` / `edges`，检查 id 不重复、边不跨段；按 flow-json.md「多段并列」平移各段（每段保留自己的层距，`TB` 顶齐、段间隙 64，`LR` 左齐、段间隙 72）；顶层只写一份 `direction` 和 `errors`。然后由主代理加分组（多于两段时）和每个 HTTP 接口的批注，再照常做步骤 7–10。
+**只有主代理写 `flow.json`。** 合并时：拼上各段 `nodes` / `edges`，检查 id 不重复、边不跨段；顶层只写一份 `direction` 和 `errors`。按需求顺序给第 i 段（从 0 起）的每个顶层节点写同一个粗略坐标（`TB` 为 `{x: i*1000, y: 0}`，`LR` 为 `{x: 0, y: i*1000}`），脚本靠它决定段的先后，也靠它把批注贴到正确的段。再由主代理加分组（多于两段时）和每个 HTTP 接口的批注，跑一次排版脚本，然后照常做步骤 7–10。段内层距、段间隙由脚本处理，不要手动平移。
 
 ## 环境里没有对应节点
 
