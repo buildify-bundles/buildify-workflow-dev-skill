@@ -9,16 +9,16 @@ description: >-
   mentions 编排流程, 工作流, flow.json, 画布, Webhook 接口, HTTP 接口, 试跑,
   @test, 发布, 版本号, 凭证, 服务器, 节点管理, 批注, 节点分组, 横排, 竖排,
   连线标签, 多段, 独立接口, 入站认证, 访问地址, 飞书卡片, 失败告警, 缺少节点.
-  When a needed node or bundle is missing, hands off to buildify-bundle-dev
-  (offering to install it first), then resumes orchestration after the bundle
-  is published.
+  When no software package covers the need, asks the user to create it in the
+  admin console (开发中心 → 软件包) before developing and publishing with
+  buildify-bundle-dev, then resumes orchestration.
 ---
 
 # Buildify 流程编排
 
 用已安装的 Bundle 节点编排工作流：发现节点、写画布 JSON、校验、保存草稿、试跑，试跑通过后确认版本号再发布到已确认的服务器，并用表格汇报。
 
-- 和 `buildify-bundle-dev` 分工：那个「做节点」，这个「用节点编流程」。本 skill 的规则不用来写 Bundle 源码。缺节点时按「环境里没有对应节点」交给 bundle-dev（没装先问要不要装），发布后回来接着编排。
+- 和 `buildify-bundle-dev` 分工：那个「做节点」，这个「用节点编流程」。本 skill 的规则不用来写 Bundle 源码。没有软件包时，先请用户到管理后台「开发中心 → 软件包」创建软件，再交给 bundle-dev 开发和发布（没装先安装），发布后回来接着编排。包在、只是缺节点时直接在该包里开发。
 - 唯一接口是 `buildify` CLI（`pip install buildify-cli`），它调 `buildify-open-api-server`。不要猜 REST 路径，不清楚先 `buildify help`。
 - 机器可读输出一律加 `--json`，按退出码分支（见 [reference/cli.md](reference/cli.md)「退出码」）。
 
@@ -31,7 +31,7 @@ description: >-
 - [ ] 1. CLI 就绪：buildify --json key test（见「工作区与密钥」）
 - [ ] 2. 定项目、流程（见「沿用已有，只问缺的」）
 - [ ] 3. 定服务器；画布方向默认 TB，试跑通过后默认发布
-- [ ] 4. 发现节点：bundle list → bundle nodes → 只对要放进画布的节点拉 node-properties / node-relations；缺包或缺节点 → 用 bundle-dev 做好并发布后回到这一步
+- [ ] 4. 发现节点：bundle list → bundle nodes → 只对要放进画布的节点拉 node-properties / node-relations；没有软件包 → 请用户在管理后台「开发中心 → 软件包」创建软件，再开发发布后回到这一步；包在但缺节点 → 在该包里开发后回到这一步
 - [ ] 5. 凭证：只问空槽，三选一
 - [ ] 6. 生成 flow.json：先写节点和连线，再 node scripts/layout.mjs 统一排版（见「生成画布 JSON」）
 - [ ] 7. workflow validate 闭环，ERROR 按节点写回顶层 errors
@@ -43,7 +43,7 @@ description: >-
 步骤补充：
 
 - **2–5 缺什么才问什么**，同一次提问里问完。缺口没回复前不要 `workflow create` / `save-draft` / `test-run` / `deploy`。
-- **4**：没有对应软件包或节点时停下编排，按「环境里没有对应节点」查 bundle-dev、请用户点选，开发发布后再从这一步继续。`bundle doc` 只在参数含义不清时读。
+- **4**：没有对应软件包时停下，请用户到管理后台「开发中心 → 软件包」创建软件，确认后再开发发布，然后从这一步继续。包在但缺节点时不必新建软件包，直接开发该节点。`bundle doc` 只在参数含义不清时读。
 - **8**：改已有就打开该草稿再 save-draft。新建用用户给的名称，没给就用展示过的建议名。
 - **9**：凭证选了「使用时再选」则停在草稿，不试跑。用户选了「只保存草稿」可以试跑，但不进入步骤 10。
 - **10**：只在试跑通过、且用户没选「只保存草稿」时进行。见「发布与汇报」。
@@ -58,7 +58,7 @@ description: >-
 | 批注节点字段、HTTP 接口批注正文 | [reference/comment-node.md](reference/comment-node.md) |
 | 常见骨架：Webhook 应答、定时落库、分支复制、改已有、分组 | [reference/recipes.md](reference/recipes.md)（节点名仍须用 CLI 核实） |
 | 保存 / 试跑 / 发布后的汇报表格与状态符号 | [reference/report.md](reference/report.md) |
-| 缺节点、要先装 buildify-bundle-dev | 本文「环境里没有对应节点」，安装说明 <https://buildify.cn/buildify-bundle-dev/install.md> |
+| 没有软件包，要先在管理后台创建再开发 | 本文「环境里没有对应节点」，安装说明 <https://buildify.cn/buildify-bundle-dev/install.md> |
 
 ## 生成画布 JSON（步骤 6）
 
@@ -131,6 +131,8 @@ description: >-
 
 确实没有时**立刻停止**编 JSON / validate / 试跑 / 发布，按下面四步走。用户点选之前不装 skill、不写 Bundle 代码。
 
+**没有软件包时，先让用户在管理后台创建软件。** `bundle list` 里没有能覆盖需求的软件包时，开发和发布之前先提示他到管理后台「开发中心 → 软件包」创建软件。他确认已经创建、并给出软件包名称之前，不安装 bundle-dev、不写代码、不发布。包已经在、只是缺节点时，不必再创建软件包。
+
 ### 1. 查 buildify-bundle-dev 是否已装
 
 按顺序找，找到一个就算已装，记下它的 `SKILL.md` 路径：
@@ -141,10 +143,14 @@ description: >-
 
 ### 2. 说明缺口，一次点选
 
-```markdown
-## 缺少节点
+没有软件包时用这个：
 
-当前工作区没有能实现「同步订单」的软件包。`bundle list` / `bundle nodes` 中未见订单同步相关节点。
+```markdown
+## 缺少软件包
+
+当前工作区没有能实现「同步订单」的软件包。`bundle list` 中未见相关软件包。
+
+请先到管理后台「开发中心 → 软件包」创建软件。创建完成后再开发和发布，发布后继续编排。
 
 ### 相近能力
 
@@ -154,16 +160,34 @@ description: >-
 
 ### 下一步
 
-1. 安装 buildify-bundle-dev，开发「同步订单」Bundle，发布后继续编排（推荐）
+1. 我已在「开发中心 → 软件包」创建软件，继续开发和发布（推荐）
 2. 改用「真实节点名」
-3. 先停下，我自己做好 Bundle 再继续
+3. 先停下
 ```
 
-- 已安装时第 1 项写「用 buildify-bundle-dev 开发「同步订单」Bundle，发布后继续编排（推荐）」。
+- 已安装时第 1 项写「我已在「开发中心 → 软件包」创建软件，用 buildify-bundle-dev 开发并发布，再继续编排（推荐）」。
+- 未安装时第 1 项写「我已在「开发中心 → 软件包」创建软件，安装 buildify-bundle-dev 后开发并发布，再继续编排（推荐）」。
+- 选第 1 项时带上刚创建的软件包名称。没写就再问一次名称，拿到之前不要开发。开发、`bundle.json` 和发布都用这个名称，不要另起一个。
 - 没有相近能力就不出「相近能力」表和对应选项；有多个相近节点时每个一项。
 - 选「改用」就回到步骤 4 用那个节点；选「先停下」就结束，不保存草稿。
 
-### 3. 安装（未安装且用户选了第 1 项）
+包已经在、只缺节点时用这个，不必请他新建软件包：
+
+```markdown
+## 缺少节点
+
+软件包「真实包名」里没有实现「同步订单」的节点。`bundle nodes` 中未见该节点。
+
+### 下一步
+
+1. 在「真实包名」里开发这个节点并发布，然后继续编排（推荐）
+2. 改用「真实节点名」
+3. 先停下
+```
+
+未安装时，把第 1 项改成「安装 buildify-bundle-dev，在「真实包名」里开发这个节点并发布，然后继续编排（推荐）」。相近能力的写法与上面相同。
+
+### 3. 安装（未安装且用户选了继续开发）
 
 读 <https://buildify.cn/buildify-bundle-dev/install.md>（`curl -sSL` 或网页抓取工具取正文）并照它执行：定 skills 根目录、clone 或更新、校验。用户已经点了安装，不要再问是否安装；install.md 判断目录不确定时会让你问一次，照做。
 
@@ -172,7 +196,7 @@ description: >-
 ### 4. 开发、发布，再回来编排
 
 1. **先记下编排现场。** 在进度清单下补一段「编排待续」：需求一句话；已确认的项目、流程名、服务器、凭证、方向；缺的节点要做什么（入参、出参、出口、是否触发器、要不要凭证）。
-2. **按 bundle-dev 开发。** 读它的 `SKILL.md`，按它的清单做骨架、表单、实现、校验、打包、发布。代码放哪、`bundleName`、版本号、发布凭证都以它为准，本 skill 的画布规则不用在 Bundle 代码上。它要求用户确认的事照常问。
+2. **按 bundle-dev 开发。** 读它的 `SKILL.md`，按它的清单做骨架、表单、实现、校验、打包、发布。没有软件包的这条路径，`bundleName` 用用户在「开发中心 → 软件包」里创建的名称。代码放哪、版本号、发布凭证以 bundle-dev 为准，本 skill 的画布规则不用在 Bundle 代码上。它要求用户确认的事照常问。
 3. **发布成功后回到步骤 4。** `buildify --json bundle list -k <关键词>` 确认新包可见，再 `bundle nodes` / `node-properties` / `node-relations` 取真实的 `bundleVersion`、`icon`、表单和 relations。不要用 Bundle 源码里的值代替 CLI 返回。
 4. **看不到新包时不要编 JSON。** 告诉用户已发布的 `bundleName` 和版本，请他到控制台确认这个包对当前工作区可用，确认后再重查。
 5. **接着编排。** 「编排待续」里已确认的项不再问；新节点有凭证槽时照「凭证」三选一，然后照常走步骤 5–10。发布汇报里加「新增 Bundle」一节（见 [reference/report.md](reference/report.md)）。

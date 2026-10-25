@@ -99,7 +99,7 @@ buildify --json key test
 
 4. 可选：`node --version`，18 及以上即可跑排版脚本（不用 `npm install`），用 `node "$DEST/scripts/layout.mjs" --help` 确认。没有 Node 或版本太低时只提示一句：编排时会改用手算坐标，排版可能和控制台「自动排列」略有出入。不要替用户装 Node。
 
-5. 可选：同一 skills 根目录下有没有 `buildify-bundle-dev/SKILL.md`。没有不用现在装，只在汇报里提一句：编排时缺节点会先问要不要按 <https://buildify.cn/buildify-bundle-dev/install.md> 安装。
+5. 可选：同一 skills 根目录下有没有 `buildify-bundle-dev/SKILL.md`。没有不用现在装，只在汇报里提一句：编排时没有软件包会先请你到管理后台「开发中心 → 软件包」创建软件，再按 <https://buildify.cn/buildify-bundle-dev/install.md> 安装后开发和发布。
 
 ## 6. 汇报
 

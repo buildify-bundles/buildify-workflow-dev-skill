@@ -2,7 +2,7 @@
 
 Agent Skill：用已安装的 Bundle 节点编排 Buildify 工作流。
 
-与 `buildify-bundle-dev` 分工：那个是「做节点」，这个是「用节点编流程」。编排时发现缺节点，会先检查本机有没有 `buildify-bundle-dev`，没有就问你要不要按 <https://buildify.cn/buildify-bundle-dev/install.md> 安装；装好后用它开发并发布 Bundle，再回来接着编排。
+与 `buildify-bundle-dev` 分工：那个是「做节点」，这个是「用节点编流程」。编排时发现没有对应软件包，会先请你到管理后台「开发中心 → 软件包」创建软件，再检查本机有没有 `buildify-bundle-dev`，没有就按 <https://buildify.cn/buildify-bundle-dev/install.md> 安装；创建完成后再用它开发和发布，然后回来接着编排。
 
 技能目录名是 `buildify-workflow-dev`，仓库名是 `buildify-workflow-dev-skill`。装好后根目录必须直接有 `SKILL.md`（`name: buildify-workflow-dev`）。
 
@@ -41,7 +41,7 @@ git clone https://gitee.com/buildify/buildify-workflow-dev-skill.git ~/.cursor/s
 
 | 文件 | 内容 |
 |---|---|
-| `SKILL.md` | 主入口：编排清单、画布硬规则、多段画布、缺节点时交给 bundle-dev、项目/流程/服务器/凭证点选、HTTP 接口与试跑、失败告警、发布 |
+| `SKILL.md` | 主入口：编排清单、画布硬规则、多段画布、没有软件包时先到开发中心创建再交给 bundle-dev、项目/流程/服务器/凭证点选、HTTP 接口与试跑、失败告警、发布 |
 | `reference/report.md` | 保存 / 试跑 / 发布后的汇报表格与状态符号 |
 | `install.md` | 把 `buildify-workflow-dev` 装到各客户端 skills 目录 |
 | `reference/cli.md` | `buildify` CLI 命令与退出码 |
