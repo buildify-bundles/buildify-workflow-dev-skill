@@ -8,15 +8,17 @@ description: >-
   when the user creates, edits, test-runs or publishes a Buildify workflow, or
   mentions 编排流程, 工作流, flow.json, 画布, Webhook 接口, HTTP 接口, 试跑,
   @test, 发布, 版本号, 凭证, 服务器, 节点管理, 批注, 节点分组, 横排, 竖排,
-  连线标签, 多段, 独立接口, 入站认证, 访问地址, 飞书卡片, 失败告警. For
-  building Bundle nodes use buildify-bundle-dev instead.
+  连线标签, 多段, 独立接口, 入站认证, 访问地址, 飞书卡片, 失败告警, 缺少节点.
+  When a needed node or bundle is missing, hands off to buildify-bundle-dev
+  (offering to install it first), then resumes orchestration after the bundle
+  is published.
 ---
 
 # Buildify 流程编排
 
 用已安装的 Bundle 节点编排工作流：发现节点、写画布 JSON、校验、保存草稿、试跑，试跑通过后确认版本号再发布到已确认的服务器，并用表格汇报。
 
-- 和 `buildify-bundle-dev` 分工：那个「做节点」，这个「用节点编流程」。不要在本 skill 里改写 Bundle 源码。
+- 和 `buildify-bundle-dev` 分工：那个「做节点」，这个「用节点编流程」。本 skill 的规则不用来写 Bundle 源码。缺节点时按「环境里没有对应节点」交给 bundle-dev（没装先问要不要装），发布后回来接着编排。
 - 唯一接口是 `buildify` CLI（`pip install buildify-cli`），它调 `buildify-open-api-server`。不要猜 REST 路径，不清楚先 `buildify help`。
 - 机器可读输出一律加 `--json`，按退出码分支（见 [reference/cli.md](reference/cli.md)「退出码」）。
 
@@ -29,7 +31,7 @@ description: >-
 - [ ] 1. CLI 就绪：buildify --json key test（见「工作区与密钥」）
 - [ ] 2. 定项目、流程（见「沿用已有，只问缺的」）
 - [ ] 3. 定服务器；画布方向默认 TB，试跑通过后默认发布
-- [ ] 4. 发现节点：bundle list → bundle nodes → 只对要放进画布的节点拉 node-properties / node-relations
+- [ ] 4. 发现节点：bundle list → bundle nodes → 只对要放进画布的节点拉 node-properties / node-relations；缺包或缺节点 → 用 bundle-dev 做好并发布后回到这一步
 - [ ] 5. 凭证：只问空槽，三选一
 - [ ] 6. 生成 flow.json：先写节点和连线，再 node scripts/layout.mjs 统一排版（见「生成画布 JSON」）
 - [ ] 7. workflow validate 闭环，ERROR 按节点写回顶层 errors
@@ -41,7 +43,7 @@ description: >-
 步骤补充：
 
 - **2–5 缺什么才问什么**，同一次提问里问完。缺口没回复前不要 `workflow create` / `save-draft` / `test-run` / `deploy`。
-- **4**：没有对应软件包或节点时停止，见「环境里没有对应节点」。`bundle doc` 只在参数含义不清时读。
+- **4**：没有对应软件包或节点时停下编排，按「环境里没有对应节点」查 bundle-dev、请用户点选，开发发布后再从这一步继续。`bundle doc` 只在参数含义不清时读。
 - **8**：改已有就打开该草稿再 save-draft。新建用用户给的名称，没给就用展示过的建议名。
 - **9**：凭证选了「使用时再选」则停在草稿，不试跑。用户选了「只保存草稿」可以试跑，但不进入步骤 10。
 - **10**：只在试跑通过、且用户没选「只保存草稿」时进行。见「发布与汇报」。
@@ -55,6 +57,8 @@ description: >-
 | 参数里的表达式（按 `uiComponent`）、JS 代码注释、飞书卡片与失败原因 | [reference/expressions.md](reference/expressions.md) |
 | 批注节点字段、HTTP 接口批注正文 | [reference/comment-node.md](reference/comment-node.md) |
 | 常见骨架：Webhook 应答、定时落库、分支复制、改已有、分组 | [reference/recipes.md](reference/recipes.md)（节点名仍须用 CLI 核实） |
+| 保存 / 试跑 / 发布后的汇报表格与状态符号 | [reference/report.md](reference/report.md) |
+| 缺节点、要先装 buildify-bundle-dev | 本文「环境里没有对应节点」，安装说明 <https://buildify.cn/buildify-bundle-dev/install.md> |
 
 ## 生成画布 JSON（步骤 6）
 
@@ -114,23 +118,33 @@ description: >-
 
 **只有主代理写 `flow.json`。** 合并时：拼上各段 `nodes` / `edges`，检查 id 不重复、边不跨段；顶层只写一份 `direction` 和 `errors`。按需求顺序给第 i 段（从 0 起）的每个顶层节点写同一个粗略坐标（`TB` 为 `{x: i*1000, y: 0}`，`LR` 为 `{x: 0, y: i*1000}`），脚本靠它决定段的先后，也靠它把批注贴到正确的段。再由主代理加分组（多于两段时）和每个 HTTP 接口的批注，跑一次排版脚本，然后照常做步骤 7–10。段内层距、段间隙由脚本处理，不要手动平移。
 
-## 环境里没有对应节点
+## 环境里没有对应节点：先做 Bundle，再回来编排
 
 步骤 4 必须用 CLI 核实，**禁止**按名称或 recipes 臆造 `bundleName` / 节点 `name`。
 
 判定「没有」：
 
-- `bundle list`（可加 `-k` 关键词）里没有能覆盖需求的软件包；或
+- `bundle list`（可加 `-k` 关键词，换两三个同义词再查）里没有能覆盖需求的软件包；或
 - 包在，但 `bundle nodes` 展平结果里没有要用的节点类型。
 
 **包在、只是缺某个接口的专用节点时**，先看同包有没有通用调用节点（类名以 `ApiCall` 结尾，或 `bundle doc` 里有「通用调用」）。有就用它，按厂商文档和 `bundle doc` 填 `method` / `path` / `query` / `headers` / `body`，这不算臆造。
 
-确实没有时**立刻停止**编 JSON / validate / 试跑 / 发布，说明缺口，请用户用 `buildify-bundle-dev` 实现并发布后再从步骤 4 继续。用户明确说「那就去做这个 Bundle」之前，不要在本会话里写 Bundle 代码。
+确实没有时**立刻停止**编 JSON / validate / 试跑 / 发布，按下面四步走。用户点选之前不装 skill、不写 Bundle 代码。
+
+### 1. 查 buildify-bundle-dev 是否已装
+
+按顺序找，找到一个就算已装，记下它的 `SKILL.md` 路径：
+
+1. 本会话的技能列表里有 `buildify-bundle-dev`。
+2. 本 skill 的同级目录：`test -f "<本 skill 目录>/../buildify-bundle-dev/SKILL.md"`。
+3. 当前客户端的个人 skills 目录和当前仓库的 skills 目录（如 `~/.cursor/skills/`、`.cursor/skills/`、`~/.claude/skills/`）下的 `buildify-bundle-dev/SKILL.md`。
+
+### 2. 说明缺口，一次点选
 
 ```markdown
 ## 缺少节点
 
-当前工作区没有能实现「xxx」的软件包。`bundle list` / `bundle nodes` 中未见某某。
+当前工作区没有能实现「同步订单」的软件包。`bundle list` / `bundle nodes` 中未见订单同步相关节点。
 
 ### 相近能力
 
@@ -138,10 +152,30 @@ description: >-
 | --- | --- |
 | 真实节点名 | 一句话 |
 
-没有相近能力就不要编这张表。请先用 buildify-bundle-dev 开发并发布，控制台和 `buildify bundle list` 能看到之后，我再继续编排。需要的话我可以按 bundle-dev 做这个节点。
+### 下一步
+
+1. 安装 buildify-bundle-dev，开发「同步订单」Bundle，发布后继续编排（推荐）
+2. 改用「真实节点名」
+3. 先停下，我自己做好 Bundle 再继续
 ```
 
-相近但不完全匹配时：每个真实节点一个选项，再加「新做 Bundle」。未选定前不要往下写流程。
+- 已安装时第 1 项写「用 buildify-bundle-dev 开发「同步订单」Bundle，发布后继续编排（推荐）」。
+- 没有相近能力就不出「相近能力」表和对应选项；有多个相近节点时每个一项。
+- 选「改用」就回到步骤 4 用那个节点；选「先停下」就结束，不保存草稿。
+
+### 3. 安装（未安装且用户选了第 1 项）
+
+读 <https://buildify.cn/buildify-bundle-dev/install.md>（`curl -sSL` 或网页抓取工具取正文）并照它执行：定 skills 根目录、clone 或更新、校验。用户已经点了安装，不要再问是否安装；install.md 判断目录不确定时会让你问一次，照做。
+
+装完不必新开对话，直接读 `$SKILL_DIR/SKILL.md` 继续。安装失败就贴出命令输出并停下，不要手抄文件，也不要换别的目录硬装。
+
+### 4. 开发、发布，再回来编排
+
+1. **先记下编排现场。** 在进度清单下补一段「编排待续」：需求一句话；已确认的项目、流程名、服务器、凭证、方向；缺的节点要做什么（入参、出参、出口、是否触发器、要不要凭证）。
+2. **按 bundle-dev 开发。** 读它的 `SKILL.md`，按它的清单做骨架、表单、实现、校验、打包、发布。代码放哪、`bundleName`、版本号、发布凭证都以它为准，本 skill 的画布规则不用在 Bundle 代码上。它要求用户确认的事照常问。
+3. **发布成功后回到步骤 4。** `buildify --json bundle list -k <关键词>` 确认新包可见，再 `bundle nodes` / `node-properties` / `node-relations` 取真实的 `bundleVersion`、`icon`、表单和 relations。不要用 Bundle 源码里的值代替 CLI 返回。
+4. **看不到新包时不要编 JSON。** 告诉用户已发布的 `bundleName` 和版本，请他到控制台确认这个包对当前工作区可用，确认后再重查。
+5. **接着编排。** 「编排待续」里已确认的项不再问；新节点有凭证槽时照「凭证」三选一，然后照常走步骤 5–10。发布汇报里加「新增 Bundle」一节（见 [reference/report.md](reference/report.md)）。
 
 ## 项目 / 流程 / 服务器 / 凭证：沿用已有，只问缺的
 
@@ -311,7 +345,7 @@ WARNING 不影响退出码，但也要修：`data.icon` 缺失、边上 `relatio
    ```
 
    测试地址 = `BASE` + `/@test` + 触发器 `parameters.path`，方法与触发器一致；路径参数（如 `:id`）换成示例值，请求体按需求造一条最小样例。触发器开了入站认证时，不要猜密钥、不要从凭证里取明文：请用户提供，或请他自己调测试地址，再等 `test-run` 结果。
-5. 结合 `test-run` 的 `nodes[].outputs` / `events` 和这次 HTTP 响应判断是否符合需求，按「发布与汇报」的试跑表汇报。
+5. 结合 `test-run` 的 `nodes[].outputs` / `events` 和这次 HTTP 响应判断是否符合需求，按 [report.md](reference/report.md)「试跑后」汇报。
 
 ## 通知与失败告警
 
@@ -347,98 +381,15 @@ buildify --json workflow deploy -p "$PROJ" -w "$WF" --worker "$WKR" \
 
 `--version-name` 和 `--remark` 只写到这个发布版本，不改流程描述。`--wait` 在 CLI 内轮询到结束，**不要**再循环调 `workflow deployment`。返回的 `versionName` / `publishRemark` / `summary` 直接用来画表；失败时退出码 4，把 `summary.servers[].message` 原样告诉用户。
 
-### 汇报格式
+### 汇报
 
-- 概览和**服务器都用 Markdown 表**，服务器表列：服务器、描述、在线、部署、说明。不要改成列表。
-- 标题可用彩色 emoji（`## ✅ 已发布`）。**表格单元格不要写** `🟢` `✅` `❌` 这类彩色 emoji：很多客户端（含 Cursor）在表里不渲染，看起来像丢了。单元格用下表的符号 + 中文。
-- 只用名称（项目名、流程名、版本名、`workerName`），不要甩 projectId / workerId / deploymentId，除非用户要排障。
-- 不要输出节点信息（链路、节点表、`label` / `summary` / 触发类型 / `webhookPath`），响应里有 `summary.nodes` 也忽略。HTTP 接口的访问地址例外。
-- 字段来自**这一次** `deploy --wait` 的返回，不要为了填表再请求。刚发布完不要调 `workflow published`；用户事后问线上版本时才用它画同一套表。
-
-```markdown
-## ✅ 已发布
-
-| 项 | 内容 |
-| --- | --- |
-| 项目 | 测试项目 |
-| 流程 | 当前时间 API |
-| 版本号 | `v20261005-184620` |
-| 发布说明 | 首次上线 /test2 当前时间接口 |
-| 总体 | ✓ 成功 |
-| 发布时间 | 2026-09-21 09:30:00 |
-| 访问地址 | `GET http://1.2.3.4:8080/test2` |
-
-### 服务器
-
-| 服务器 | 描述 | 在线 | 部署 | 说明 |
-| --- | --- | --- | --- | --- |
-| 本地java进程测试 | 测试专用 | ● 在线 | ✓ 成功 | — |
-
-### 凭证
-
-未引用访问凭证
-```
-
-「访问地址」只在 HTTP 接口时写，用**正式地址**（不带 `/@test`），多个接口每个一行；没有 `externalHost` / `httpPort` 时写「服务器访问地址 + `/test2`」，并提示到「节点管理」设置。有凭证时「凭证」下只出这张表：
-
-```markdown
-| Bundle | 类型 | 名称 |
-| --- | --- | --- |
-| official/mysql | Mysql | 生产只读 |
-```
-
-按 `deployStatus` / `isOnline`（或 `deployStatusLabel` / `onlineLabel`）映射，**不要**把响应里的 `deployStatusIcon` / `onlineIcon` 原样贴进表格。
-
-| 含义 | 标题 | 表格单元格 |
-| --- | --- | --- |
-| 成功 | `## ✅ 已发布` | `✓ 成功` |
-| 成功有警告 | `## ⚠️ 已发布（有警告）` | `! 有警告` |
-| 失败 | `## ❌ 发布失败` | `✗ 失败`，说明列写 `message` |
-| 超时 | `## ⏰ 发布超时` | `… 超时` |
-| 部署中 / 待部署 | `## 🔄 发布中` | `… 部署中` / `… 待部署` |
-| 已取消 | `## 🚫 已取消` | `✗ 已取消` |
-| 在线 / 离线 | （写在服务器表） | `● 在线` / `○ 离线` |
-
-失败示例：
-
-```markdown
-## ❌ 发布失败
-
-| 服务器 | 描述 | 在线 | 部署 | 说明 |
-| --- | --- | --- | --- | --- |
-| mac | 无描述 | ○ 离线 | ✗ 失败 | connection refused |
-```
-
-保存草稿后：
-
-```markdown
-## 已保存
-
-| 项 | 内容 |
-| --- | --- |
-| 项目 | 测试项目 |
-| 流程 | 当前时间 API |
-| 服务器 | 本地java进程测试 |
-```
-
-试跑后标题写「试跑通过」或「试跑未通过」，「结果」写一句结论，不贴节点输出。HTTP 接口加「测试地址」（带 `/@test`）和「HTTP 状态」两行；访问地址不通时不出这张表，改用「试跑 HTTP 接口」第 3 步的提示。
-
-```markdown
-## 试跑通过
-
-| 项 | 内容 |
-| --- | --- |
-| 项目 | 测试项目 |
-| 流程 | 当前时间 API |
-| 服务器 | 火山测试服务器 |
-| 测试地址 | `GET http://1.2.3.4:8080/@test/test2` |
-| HTTP 状态 | 200 |
-| 结果 | 返回了当前时间 |
-```
+保存草稿、试跑、发布后都用 Markdown 表汇报，模板、状态符号映射和禁写项见 [reference/report.md](reference/report.md)。要点：服务器用表不用列表；表格单元格不放彩色 emoji；只写名称不写 id；不输出节点信息（HTTP 访问地址除外）。
 
 ## 工作区与密钥（步骤 1）
 
 环境：Python 3.10+，已 `pip install buildify-cli`。执行 CLI，不要读它的源码。
+
+找不到 `buildify` 命令时：`python3 --version` 确认 3.10+，再 `python3 -m pip install -U buildify-cli`。版本不够就提示升级，不要改系统 Python。
 
 `buildify --json key test`：
 

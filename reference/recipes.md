@@ -11,7 +11,7 @@ buildify --json bundle node-relations  -b official/core -n WebhookTriggerNode
 
 照抄骨架前替换这些占位：
 
-- `official/core`、节点名、`REPLACE_ME` 版本：换成 `bundle list` / `bundle nodes` **实际返回**的值。环境里根本没有能覆盖需求的包时，不要用骨架硬编，按 SKILL「环境里没有对应节点」停下。
+- `official/core`、节点名、`REPLACE_ME` 版本：换成 `bundle list` / `bundle nodes` **实际返回**的值。环境里根本没有能覆盖需求的包时，不要用骨架硬编，按 SKILL「环境里没有对应节点」先用 buildify-bundle-dev 做好并发布，再回来编排。
 - `icon: COPY_FROM_BUNDLE_NODES`：换成目录返回的 `icon`（如 `webhook.svg`）。
 - `trigger` / `work` / `reply` 这类 id：换成 `n-` + nanoid。
 - 骨架默认 `TB`；横排时改 `"direction": "LR"`。

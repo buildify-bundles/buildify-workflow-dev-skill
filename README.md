@@ -2,7 +2,7 @@
 
 Agent Skill：用已安装的 Bundle 节点编排 Buildify 工作流。
 
-与 `buildify-bundle-dev` 职责互斥：那个是「做节点」，这个是「用节点编流程」。
+与 `buildify-bundle-dev` 分工：那个是「做节点」，这个是「用节点编流程」。编排时发现缺节点，会先检查本机有没有 `buildify-bundle-dev`，没有就问你要不要按 <https://buildify.cn/buildify-bundle-dev/install.md> 安装；装好后用它开发并发布 Bundle，再回来接着编排。
 
 技能目录名是 `buildify-workflow-dev`，仓库名是 `buildify-workflow-dev-skill`。装好后根目录必须直接有 `SKILL.md`（`name: buildify-workflow-dev`）。
 
@@ -41,7 +41,8 @@ git clone https://gitee.com/buildify/buildify-workflow-dev-skill.git ~/.cursor/s
 
 | 文件 | 内容 |
 |---|---|
-| `SKILL.md` | 主入口：编排清单、画布硬规则、多段画布、项目/流程/服务器/凭证点选、HTTP 接口与试跑、失败告警、发布摘要 |
+| `SKILL.md` | 主入口：编排清单、画布硬规则、多段画布、缺节点时交给 bundle-dev、项目/流程/服务器/凭证点选、HTTP 接口与试跑、失败告警、发布 |
+| `reference/report.md` | 保存 / 试跑 / 发布后的汇报表格与状态符号 |
 | `install.md` | 把 `buildify-workflow-dev` 装到各客户端 skills 目录 |
 | `reference/cli.md` | `buildify` CLI 命令与退出码 |
 | `reference/flow-json.md` | 画布 JSON：`n-` + nanoid、`errors`、`direction`（TB/LR）、排版脚本用法，以及没有 Node 时的手算间距 / 分组 / 多段 / 批注 |
@@ -76,4 +77,4 @@ buildify --json key test
 
 ## 使用
 
-对话里提到编排流程、工作流、试跑、发布、Webhook 接口、凭证、批注、节点分组、横排/竖排、入站认证、访问地址、飞书卡片、失败告警，或显式 `/buildify-workflow-dev` 即可触发。
+对话里提到编排流程、工作流、试跑、发布、Webhook 接口、凭证、批注、节点分组、横排/竖排、入站认证、访问地址、飞书卡片、失败告警、缺少节点，或显式 `/buildify-workflow-dev` 即可触发。

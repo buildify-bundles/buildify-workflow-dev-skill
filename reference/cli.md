@@ -53,7 +53,7 @@ buildify --json config profiles
 | `health` | 探活，无需密钥 |
 | `key test` | 校验密钥并回显工作区（`tenantId` / `keyName`） |
 | `config profiles` | 已存 profile，无密钥 |
-| `bundle list [-k keyword]` | 可用 bundle。需求对应的包不在列表里就停止编排（见 SKILL「环境里没有对应节点」） |
+| `bundle list [-k keyword]` | 可用 bundle。需求对应的包不在列表里就停下编排，转 bundle-dev 开发并发布后再回来（见 SKILL「环境里没有对应节点」） |
 | `bundle nodes -b NAME [-V ver]` | 节点目录（已展平 `groups_json[].nodes` + `nodes_json`，含 `icon` / `label` / `isTrigger` / `bundleVersion`）。目录 `summary` 是类型通用简述，不要当画布文案 |
 | `bundle node-properties -b NAME -n NodeName` | 表单 schema → `data.parameters` 的合法键；同时带回 `icon` / `label` / `isTrigger` 和每个字段的 **`uiComponent`**（决定表达式语法） |
 | `bundle node-relations -b NAME -n NodeName` | 出口 relation 整份对象 → `edges[].data.relations[]` |
