@@ -72,10 +72,10 @@ buildify --json key test
 
 `scripts/layout.mjs` 的布局函数逐行移植自控制台前端（`eventflow-cloud-frontend`）：
 
-- `composables/applyLayout.js`：`doApplyLayout` 及其依赖（尺寸、扇出层距、同层对齐、多段并排、分组包络、批注跟随）
+- `composables/applyLayout.js`：`doApplyLayout` 及其依赖（尺寸、扇出层距、同层对齐、多段并排/货架折排、长链折行、分组包络、批注跟随）
 - `components/workflows/edges/routingMetrics.js`：`LOOP_METRICS`、`getGroupLoopInsets`（组内回连留白）
 
-当前对齐到前端提交 `a6e7322`。前端改了这两个文件的常量或流程时，把改动同步到脚本里对应的函数，再用两边对同一批样例（TB / LR 主链、扇出 2 和 3、多段、三段分组、组内回环、批注）对比坐标和分组尺寸，必须完全一致。脚本只比前端多两步：排版前检查图结构，排版后把顶层节点平移到 `x ≥ 40`、`y ≥ 24`。
+当前对齐到前端提交 `f8c5fad`（流程过长时折行；互不连线的几段过长时分排放到接近屏幕比例）。前端改了这两个文件的常量或流程时，把改动同步到脚本里对应的函数，再用两边对同一批样例（TB / LR 主链、扇出 2 和 3、多段、长链折行、三段分组、组内回环、批注）对比坐标和分组尺寸，必须完全一致。脚本只比前端多两步：排版前检查图结构，排版后把顶层节点平移到 `x ≥ 40`、`y ≥ 24`。
 
 ## 使用
 

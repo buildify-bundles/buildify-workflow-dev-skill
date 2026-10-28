@@ -440,15 +440,217 @@ function shiftNodes(nodes, dx, dy) {
   }
 }
 
+/**
+ * 按给定的交叉轴上限，把几段依次排进若干排：排内沿交叉轴并排，放不下就沿流向另起一排。
+ * 只计算各段的偏移，不移动节点。
+ */
+function shelfPlacements(boxes, horizontal, limit, gap, shelfGap) {
+  const placements = []
+  let shelfStart = 0
+  let shelfDepth = 0
+  let cursor = 0
+  let width = 0
+  let height = 0
+  for (const box of boxes) {
+    const cross = horizontal ? box.height : box.width
+    const depth = horizontal ? box.width : box.height
+    if (cursor > 0 && cursor + cross > limit) {
+      shelfStart += shelfDepth + shelfGap
+      shelfDepth = 0
+      cursor = 0
+    }
+    placements.push(horizontal ? { x: shelfStart, y: cursor } : { x: cursor, y: shelfStart })
+    cursor += cross + gap
+    shelfDepth = Math.max(shelfDepth, depth)
+    const right = horizontal ? shelfStart + depth : cursor - gap
+    const bottom = horizontal ? cursor - gap : shelfStart + depth
+    width = Math.max(width, right)
+    height = Math.max(height, bottom)
+  }
+  return { placements, width, height }
+}
+
+/**
+ * 互不连线的几段沿交叉轴并排，避免高分组把另一段的后续节点顶开。
+ * 并排过长时分成几排，让整体接近目标宽高比。
+ */
 function packComponents(components, direction, originX, originY, gap) {
   const horizontal = isHorizontalDir(direction)
-  let cursor = horizontal ? originY : originX
-  for (const nodes of components) {
-    const box = boundsOf(nodes)
-    const dx = (horizontal ? originX : cursor) - box.minX
-    const dy = (horizontal ? cursor : originY) - box.minY
-    shiftNodes(nodes, dx, dy)
-    cursor += (horizontal ? box.height : box.width) + gap
+  const boxes = components.map(boundsOf)
+  const shelfGap = wrapGap(direction)
+  const crossSizes = boxes.map(box => (horizontal ? box.height : box.width))
+  const total = crossSizes.reduce((sum, size) => sum + size, 0) + gap * (boxes.length - 1)
+  const widest = Math.max(...crossSizes)
+
+  let best = null
+  for (let shelves = 1; shelves <= boxes.length; shelves++) {
+    const limit = Math.max(widest, total / shelves)
+    const layout = shelfPlacements(boxes, horizontal, limit, gap, shelfGap)
+    if (!layout.height) continue
+    const score = Math.abs(Math.log(layout.width / layout.height / WRAP_ASPECT))
+    if (!best || score < best.score - 1e-6) best = { ...layout, score }
+  }
+  if (!best) return
+
+  components.forEach((nodes, index) => {
+    const box = boxes[index]
+    const place = best.placements[index]
+    shiftNodes(nodes, originX + place.x - box.minX, originY + place.y - box.minY)
+  })
+}
+
+/** 折行后整体宽高比的目标值，接近常见屏幕 */
+const WRAP_ASPECT = 1.6
+/** 层数少于此值不折行，小流程保持原样 */
+const WRAP_MIN_BANDS = 6
+/** 每段至少保留的层数，避免切出只有一两个节点的碎段 */
+const WRAP_MIN_BANDS_PER_SEGMENT = 3
+
+/** 段与段之间留给换行连线和标签的距离 */
+function wrapGap(direction) {
+  return isHorizontalDir(direction) ? 120 : 160
+}
+
+/**
+ * 沿流向把节点归成层。同一层的节点在流向上互相重叠，层与层之间有空隙；
+ * 按区间合并而不是按中心分组，同层节点尺寸不一时也不会被拆开。
+ */
+function flowBands(units, horizontal) {
+  const items = units
+    .map((node) => {
+      const lead = rankLead(node, horizontal)
+      return { node, lead, end: lead + rankExtent(node, horizontal) }
+    })
+    .sort((a, b) => a.lead - b.lead)
+  const bands = []
+  for (const item of items) {
+    const last = bands[bands.length - 1]
+    if (last && item.lead < last.end) {
+      last.nodes.push(item.node)
+      last.end = Math.max(last.end, item.end)
+    } else {
+      bands.push({ nodes: [item.node], start: item.lead, end: item.end })
+    }
+  }
+  return bands
+}
+
+/** 按段数估算折行后的宽高比（段间距计入交叉轴），选最接近目标比例的段数 */
+function wrapSegmentCount(length, crossLength, horizontal, bandCount, gap) {
+  if (bandCount < WRAP_MIN_BANDS || length <= 0 || crossLength <= 0) return 1
+  const maxCount = Math.floor(bandCount / WRAP_MIN_BANDS_PER_SEGMENT)
+  let best = 1
+  let bestScore = Infinity
+  for (let count = 1; count <= maxCount; count++) {
+    const flowSize = length / count
+    const crossSize = count * crossLength + (count - 1) * gap
+    const ratio = horizontal ? flowSize / crossSize : crossSize / flowSize
+    const score = Math.abs(Math.log(ratio / WRAP_ASPECT))
+    if (score < bestScore) {
+      best = count
+      bestScore = score
+    }
+  }
+  return best
+}
+
+/** 落在第 index 层之后的空隙里、被切断的连线条数 */
+function edgesAcrossGap(bands, index, bandOf, scopeEdges) {
+  let count = 0
+  for (const edge of scopeEdges) {
+    const from = bandOf.get(edge.source)
+    const to = bandOf.get(edge.target)
+    if (from == null || to == null) continue
+    if (Math.min(from, to) <= index && Math.max(from, to) > index) count++
+  }
+  return count
+}
+
+/**
+ * 在 [min, max] 层间空隙里选最接近目标位置的切点，
+ * 前后一层内跨线更少的空隙优先，尽量不把一组扇出拆到两段。
+ */
+function pickCut(bands, target, min, max, bandOf, scopeEdges) {
+  let nearest = min
+  let nearestDistance = Infinity
+  for (let i = min; i <= max; i++) {
+    const position = (bands[i].end + bands[i + 1].start) / 2
+    const distance = Math.abs(position - target)
+    if (distance < nearestDistance) {
+      nearestDistance = distance
+      nearest = i
+    }
+  }
+  let best = nearest
+  let bestCross = edgesAcrossGap(bands, nearest, bandOf, scopeEdges)
+  for (const i of [nearest - 1, nearest + 1]) {
+    if (i < min || i > max) continue
+    const cross = edgesAcrossGap(bands, i, bandOf, scopeEdges)
+    if (cross < bestCross) {
+      best = i
+      bestCross = cross
+    }
+  }
+  return best
+}
+
+/**
+ * 长链折行：Dagre 排成一条后，按层切成几段，每段平移回起点并沿交叉轴错开。
+ * 横排超长换到下一行，竖排超长换到下一列，每段仍沿原方向走。
+ */
+function wrapLongFlow(units, scopeEdges, direction) {
+  if (direction !== 'LR' && direction !== 'TB') return
+  const horizontal = isHorizontalDir(direction)
+  const bands = flowBands(units, horizontal)
+  if (bands.length < WRAP_MIN_BANDS) return
+
+  const box = boundsOf(units)
+  const length = horizontal ? box.width : box.height
+  const crossLength = horizontal ? box.height : box.width
+  const gap = wrapGap(direction)
+  const count = wrapSegmentCount(length, crossLength, horizontal, bands.length, gap)
+  if (count < 2) return
+
+  const bandOf = new Map()
+  bands.forEach((band, index) => {
+    for (const node of band.nodes) bandOf.set(node.id, index)
+  })
+
+  const origin = bands[0].start
+  const cuts = []
+  for (let i = 1; i < count; i++) {
+    const min = (cuts.length ? cuts[cuts.length - 1] : -1) + WRAP_MIN_BANDS_PER_SEGMENT
+    const max = bands.length - 1 - WRAP_MIN_BANDS_PER_SEGMENT * (count - i)
+    if (min > max) break
+    cuts.push(pickCut(bands, origin + (length * i) / count, min, max, bandOf, scopeEdges))
+  }
+  if (!cuts.length) return
+
+  const segments = []
+  let from = 0
+  for (const cut of [...cuts, bands.length - 1]) {
+    segments.push(bands.slice(from, cut + 1))
+    from = cut + 1
+  }
+
+  const flowAxis = horizontal ? 'x' : 'y'
+  const crossAxis = horizontal ? 'y' : 'x'
+  let crossCursor = null
+  for (const segment of segments) {
+    const nodes = segment.flatMap(band => band.nodes)
+    const flowShift = origin - segment[0].start
+    const segmentBox = boundsOf(nodes)
+    const crossMin = horizontal ? segmentBox.minY : segmentBox.minX
+    const crossSize = horizontal ? segmentBox.height : segmentBox.width
+    const crossShift = crossCursor == null ? 0 : crossCursor - crossMin
+    for (const node of nodes) {
+      node.position = {
+        ...node.position,
+        [flowAxis]: (node.position?.[flowAxis] ?? 0) + flowShift,
+        [crossAxis]: (node.position?.[crossAxis] ?? 0) + crossShift,
+      }
+    }
+    crossCursor = crossMin + crossShift + crossSize + gap
   }
 }
 
@@ -509,7 +711,9 @@ function layoutDirectChildren(scopeId, children, edges, direction, hierarchy) {
   const marginy = scopeId == null ? 24 : 0
   const components = connectedComponents(units, scopeEdges)
   if (components.length <= 1) {
-    layoutGraph(units, scopeEdges, direction, marginx, marginy)
+    if (layoutGraph(units, scopeEdges, direction, marginx, marginy)) {
+      wrapLongFlow(units, scopeEdges, direction)
+    }
     return
   }
 
@@ -521,6 +725,7 @@ function layoutDirectChildren(scopeId, children, edges, direction, hierarchy) {
     const ids = new Set(component.nodes.map(node => node.id))
     const componentEdges = scopeEdges.filter(edge => ids.has(edge.source) && ids.has(edge.target))
     if (layoutGraph(component.nodes, componentEdges, direction, 0, 0)) {
+      wrapLongFlow(component.nodes, componentEdges, direction)
       laidOut.push(component.nodes)
     }
   }
