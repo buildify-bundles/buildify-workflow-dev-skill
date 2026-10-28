@@ -47,6 +47,7 @@ git clone https://gitee.com/buildify/buildify-workflow-dev-skill.git ~/.cursor/s
 | `reference/cli.md` | `buildify` CLI 命令与退出码 |
 | `reference/flow-json.md` | 画布 JSON：`n-` + nanoid、`errors`、`direction`（TB/LR）、排版脚本用法，以及没有 Node 时的手算间距 / 分组 / 多段 / 批注 |
 | `scripts/layout.mjs` | 排版脚本：先连线，最后统一排版。`node scripts/layout.mjs flow.json [--direction TB\|LR] [-o out.json] [--check]` |
+| `scripts/check.mjs` | 保存前检查：一对节点一条边、边 `id`、出口数组与 `name` / `label`、节点图标对照目录。`node scripts/check.mjs flow.json --fetch [--fix]` |
 | `scripts/vendor/` | 内置的 `@dagrejs/dagre` 1.1.4（MIT，见 `dagre.LICENSE`），脚本不用 `npm install` |
 | `reference/expressions.md` | 按组件写表达式：JSON 默认 `={{msg.xxx}}`、SQL `#{}` `${}`、文本 `{{ }}`；JS 节点分段注释；飞书 `lark_md` 与失败原因 |
 | `reference/recipes.md` | 常见骨架 |
@@ -56,7 +57,7 @@ git clone https://gitee.com/buildify/buildify-workflow-dev-skill.git ~/.cursor/s
 
 - Python 3.10+
 - `pip install buildify-cli`
-- Node 18+（可选，跑排版脚本用；没有时 Agent 按 flow-json.md 手算坐标）
+- Node 18+（可选，跑排版和检查脚本用；没有时 Agent 按 flow-json.md 手算坐标、人工核对边和图标）
 - 控制台签发的开放 API 密钥（`keyId.secret`），写入 `~/.buildifyrc`
 
 ```bash

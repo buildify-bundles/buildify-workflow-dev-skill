@@ -21,6 +21,7 @@ buildify --json bundle node-relations  -b official/core -n WebhookTriggerNode
 
 ```bash
 node <skill 目录>/scripts/layout.mjs ./flow.json      # 写回坐标、锚点、分组尺寸
+node <skill 目录>/scripts/check.mjs ./flow.json --fetch --fix   # 边、出口 name / label、图标对照目录
 buildify --json workflow validate -p "$PROJ" -f ./flow.json
 ```
 
@@ -58,7 +59,7 @@ buildify --json workflow validate -p "$PROJ" -f ./flow.json
       "targetPosition": "top",
       "data": {
         "name": "JsFunctionNode",
-        "label": "JS",
+        "label": "JavaScript",
         "summary": "回显请求",
         "icon": "COPY_FROM_BUNDLE_NODES",
         "bundleName": "official/core",
@@ -200,6 +201,7 @@ WHERE id = #{msg.output.id}
 buildify --json workflow get-draft -p "$PROJ" -w "$WF" > draft.json
 # 取出 data.workflowJson 作为画布 flow.json，改完后：
 node <skill 目录>/scripts/layout.mjs ./flow.json   # 只在增删了节点/边或用户要求重排时
+node <skill 目录>/scripts/check.mjs ./flow.json --fetch --fix
 buildify --json workflow validate -p "$PROJ" -f ./flow.json
 buildify --json workflow save-draft -p "$PROJ" -w "$WF" -f ./flow.json
 ```

@@ -34,7 +34,7 @@ description: >-
 - [ ] 4. 发现节点：bundle list → bundle nodes → 只对要放进画布的节点拉 node-properties / node-relations；没有软件包 → 请用户在管理后台「开发中心 → 软件包」创建软件，再开发发布后回到这一步；包在但缺节点 → 在该包里开发后回到这一步
 - [ ] 5. 凭证：只问空槽，三选一
 - [ ] 6. 生成 flow.json：先写节点和连线，再 node scripts/layout.mjs 统一排版（见「生成画布 JSON」）
-- [ ] 7. workflow validate 闭环，ERROR 按节点写回顶层 errors
+- [ ] 7. node scripts/check.mjs --fetch 查边、出口和图标；再 workflow validate 闭环，ERROR 按节点写回顶层 errors
 - [ ] 8. save-draft（新建先 workflow create）
 - [ ] 9. test-run（HTTP 接口先测访问地址，见「试跑 HTTP 接口」）
 - [ ] 10. 确认版本号和发布说明 → workflow deploy --wait → 发布表
@@ -81,16 +81,29 @@ description: >-
 
 - **节点 id**：每个新节点（含批注、分组框、复制出来的节点）用 `n-` + 8 位 nanoid，流程内唯一。不要用 `n1` / `trigger` 这类可读名。已有草稿的旧 id 不要改。边 `id` = `{source}_{target}`。
 - **顶层**：必写 `direction`（默认 `TB`；用户要横排才 `LR`；改已有沿用草稿）和 `errors`（先 `{}`）。
-- **节点字段**：`name` / `bundleName` / `bundleVersion` / `icon` / `label` / `isTrigger` 从 `bundle nodes` / `node-properties` 原样拷贝，不要编造图标 URL。`summary` 写这颗节点在本流程里的职责，**≤8 字**（如「接收请求」「查询设备」），画布默认显示它，不要照抄目录 `summary`。
+- **节点字段**：`name` / `bundleName` / `bundleVersion` / `icon` / `label` / `isTrigger` 从 `bundle nodes` / `node-properties` 原样拷贝。**图标按节点类型逐个查目录**，不要凭名字猜（`JsFunctionNode` 是 `js.svg`，不是 `code.svg`；`HttpRequestNode` 是 `request.svg`），不要借用别的节点或软件包本身的图标，也不要写 URL。`summary` 写这颗节点在本流程里的职责，**≤8 字**（如「接收请求」「查询设备」），画布默认显示它，不要照抄目录 `summary`。
 - **坐标**：交给排版脚本。`position`、`sourcePosition` / `targetPosition`、分组框 `style` 宽高都由脚本写，不要在脚本输出后再手动挪动。只有批注和多段时要给粗略的初始坐标，见 flow-json.md「画布排列」。
 - **分支**：以不交叉为准。能沿流向干净汇合才共用下游；否则各支路复制一份配置相同的节点（新 id）。不要复制触发器。
 - **循环允许，但必须有出口。** 用户要重试、轮询、等到条件满足时，从下游出口连回上游入口即可。不要为了消环拆边或复制节点。回连由控制台绕线，节点仍按主链排，不要把下游再挪到上游旁边。环上至少要有一条边离开循环（If / Switch 的另一支、失败出口、次数用尽、超时等）。所有出口都连回环内就是死循环：补上退出条件再保存，条件不清楚就问用户。
-- **边**：同一对 source+target 只有一条边；接到同一下游的多个出口（如 Success+Failure）全部放进这条边的 `data.relations[]`。relation 对象从 `node-relations` 整份拷贝（至少 `name` + `label` + `description`）；MCP 自定义关系再带 `_id` / `icon` / `mcpKind`，并同步到源节点 `data.relations`。
+- **边**：每两个节点之间只有一条边，`id` 固定 `{source}_{target}`，不要按出口拆成 `…_Success` / `…_Failure` 两条。接到同一下游的多个出口（如 Success+Failure）全部放进这条边的 `data.relations[]` 数组。每个 relation 必须有 `name` 和 `label`，从 `node-relations` 整份拷贝；`description` 可选，可以照目录写，也可以改写成本流程里的含义（如「查不到也继续」）。MCP 自定义关系再带 `_id` / `icon` / `mcpKind`，并同步到源节点 `data.relations`。
 - **表达式**按字段 `uiComponent` 选语法：`JsonExpressionInput` 默认整字段 `"={{msg.xxx}}"` 保留类型，要拼字符串才写 `"=前缀 {{msg.xxx}}"`（`=` 必须是第一个字符，`{{ }}` 里不运算）；`SqlEditor` 用 `#{}` / `${}`；文本及其他用 `{{ }}`。见 [expressions.md](reference/expressions.md)。
 - **JS 节点** `parameters.code` 分段并写中文注释：顶部写入参/出参，每段用 `// --- 段名 ---` 隔开。
 - **批注默认不加。** 例外：每个 HTTP 接口一张（只写接口说明和访问地址）；用户要求；分支条件或调用约定在 `summary` 里写不下、不写会误用。不连线、不写 `parentNode`。初始坐标写在被说明节点的外侧（`TB` 左侧、`LR` 上方），排版脚本会让它跟着最近的节点走，并把整张画布挪进可视区。
 - **分组默认不加。** 多于两段互不连线的逻辑（三段起）时每段一个框，或用户要求时才加。组内节点必须写 `parentNode`；框的宽高和组内坐标交给脚本（标题在框内，上留白 68，有回连时自动加宽）；框背景写 `groupColor: "#5b7c99"`、`groupOpacity: 0.06`。
 - **两段及以上互不连线**时按下一节生成。
+
+### 保存前检查边和图标
+
+排版后、`workflow validate` 前跑一次：
+
+```bash
+node <本 skill 目录>/scripts/check.mjs ./flow.json --fetch          # 只报告
+node <本 skill 目录>/scripts/check.mjs ./flow.json --fetch --fix    # 能确定的直接改回 flow.json
+```
+
+`--fetch` 按画布里用到的软件包调 `bundle nodes` / `bundle node-relations` 作对照，多工作区时加 `--profile <name>`。退出码 0 才往下走；1 表示还有 ERROR，3 是文件或拉目录失败。
+
+它查的是 `workflow validate` 不一定能发现、但控制台会画错的地方：同一对节点出现两条边、边 `id` 不是 `{source}_{target}`、`relations` 不是数组或出口缺 `name` / `label`、出口名不在目录里、节点缺图标、图标和目录不一致、同类节点图标不同、图标写成 URL。`--fix` 会合并重复边、改正边 `id`、从目录补出口 `label` 和图标，不动 `description`；目录里没有的出口名不会自动猜，要按 `node-relations` 改。改完结构（合并了边）要重跑排版脚本。
 
 ## 多段画布：分开生成再合并
 
@@ -313,7 +326,7 @@ description: >-
 
 每次校验后把表单 ERROR **写回画布顶层 `errors`**：全部通过 `"errors":{}`；未通过按节点 id 汇总，如 `"errors":{"n-k7mX2pL9":1}`（value 是该节点未通过字段数，不计 WARNING）。用户明确稍后自填或选了「使用时再选」时，也要写入当前汇总再 save-draft，不要为了消掉凭证 ERROR 去猜一条凭证。
 
-WARNING 不影响退出码，但也要修：`data.icon` 缺失、边上 `relations[]` 缺 `label`、自定义关系缺 `icon` / `_id`，都从 `bundle nodes` / `node-relations` 原样补齐，否则控制台图标和出口文字不对。
+WARNING 不影响退出码，但也要修：`data.icon` 缺失、边上 `relations[]` 缺 `label`、自定义关系缺 `icon` / `_id`，都从 `bundle nodes` / `node-relations` 原样补齐，否则控制台图标和出口文字不对。图标用错、重复边这几类 validate 不一定能发现，靠 `scripts/check.mjs`（见「保存前检查边和图标」）。
 
 ## HTTP 接口
 

@@ -74,12 +74,13 @@ git clone --depth 1 https://github.com/buildify-bundles/buildify-workflow-dev-sk
 test -f "$DEST/SKILL.md"
 test -d "$DEST/reference"
 test -f "$DEST/scripts/layout.mjs"
+test -f "$DEST/scripts/check.mjs"
 test -f "$DEST/scripts/vendor/dagre.min.js"
 grep -E '^name: buildify-workflow-dev$' "$DEST/SKILL.md"
 ls "$DEST/reference"
 ```
 
-必须能看到 `cli.md`、`flow-json.md`、`expressions.md`、`recipes.md`、`comment-node.md`、`report.md`，以及排版脚本 `scripts/layout.mjs` 和 `scripts/vendor/dagre.min.js`。缺了就告诉用户路径和 `ls` 结果，不要假装成功。
+必须能看到 `cli.md`、`flow-json.md`、`expressions.md`、`recipes.md`、`comment-node.md`、`report.md`，以及排版脚本 `scripts/layout.mjs`、检查脚本 `scripts/check.mjs` 和 `scripts/vendor/dagre.min.js`。缺了就告诉用户路径和 `ls` 结果，不要假装成功。
 
 ## 5. 依赖
 

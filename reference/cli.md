@@ -81,6 +81,8 @@ buildify --json config profiles
 每条命令单独执行，看完结果再走下一步（不要写成 shell 循环）：
 
 ```bash
+node <skill 目录>/scripts/check.mjs ./flow.json --fetch --fix
+# 退出码 1：按输出改边的出口名或图标再跑，直到 0
 buildify --json workflow validate -p "$PROJ" -f ./flow.json
 # 退出码 4：读 issues。表单 ERROR 改 data.parameters 再校验；「环」不要拆边，但必须有离开循环的出口，没有就补退出条件再 save-draft
 # 表单通过：errors 只汇总仍未通过的表单字段（环不写入 errors）

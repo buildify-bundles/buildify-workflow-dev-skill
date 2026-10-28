@@ -153,8 +153,8 @@ TB（出度 2，下一层净空 120）          LR（出度 2，层距不加长�
 | `data.bundleVersion` | 是 | 钉死的版本；用 `bundle nodes` 回显的 `bundleVersion`，不要写 `latest` |
 | `data.parameters` | 视表单 | 对象，键必须出现在该节点 `properties_json` |
 | `data.credentials` | 视表单 | 对象：`{ "<槽名>": { "type": "PascalCase", "name": "实例名" } }`。`type`/`name` 必须来自用户从 `project credentials` 点选的那条，禁止默认第一条或编造 |
-| `data.icon` | **建议** | 从 `bundle nodes`（或 `node-properties`）该项的 `icon` **原样拷贝**。通常是 `webhook.svg` 这种文件名，控制台靠它显示节点图标。不要改写成 OSS URL，也不要省略 |
-| `data.label` | 建议 | 从目录 `label` **原样拷贝**节点类型名（如「Webhook」「JS 函数」）。不要把本流程职责写到这里 |
+| `data.icon` | **是** | 从 `bundle nodes`（或 `node-properties`）**该节点类型**的 `icon` 原样拷贝，是 `js.svg` 这种文件名，控制台靠它显示节点图标。按类型逐个查，不要凭名字猜、不要借别的节点或软件包本身的图标、不要写 URL。同一类型的节点（含复制出来的）图标必须相同 |
+| `data.label` | 建议 | 从目录 `label` **原样拷贝**节点类型名（如「Webhook」「JavaScript」）。不要把本流程职责写到这里 |
 | `data.summary` | **建议** | 画布**默认显示**此字段。写该节点在**本流程**中的职责，**≤8 字**。不要照抄目录通用 `summary`，也不要写路径、SQL、字段名 |
 | `data.isTrigger` | 建议 | 触发器写 `true`；目录里 `isTrigger: true` 的节点必须标上 |
 | `data.disabled` | 否 | `true` 时跳过执行 |
@@ -373,14 +373,14 @@ Markdown 便签，**默认不要加**。没有对外 HTTP 接口时，流程只�
 
 | 字段 | 必填 | 含义 |
 |------|------|------|
-| `id` | 建议 | `{source}_{target}` |
+| `id` | 是 | 固定 `{source}_{target}`。不要带出口名（`…_Success`），一对节点只有这一个 id |
 | `type` | 建议 | `"default"` |
 | `source` | 是 | 源节点 `id` |
 | `target` | 是 | 目标节点 `id` |
 | `data.relations` | 是 | 数组，至少一项。接到**本 target** 的出口全部列在这里。**整份拷贝**源节点 `bundle node-relations` 里对应的对象，不要只写 `name` |
 | `data.relations[].name` | 是 | 必须是源节点 `node-relations` 里出现过的名字；MCP / RelationCollection 自定义关系用条目映射出的 `name`（如 `tools/get_user`） |
-| `data.relations[].label` | **建议** | 画布出口文字。Success 一般是 `成功`，Failure 一般是 `失败`。缺了控制台不显示连线文字 |
-| `data.relations[].description` | 建议 | Tooltip；与目录一起拷贝 |
+| `data.relations[].label` | 是 | 画布出口文字，用目录里的值（Success 一般 `成功`，Failure 一般 `失败`，IfNode 是 `是` / `否`）。缺了控制台不显示连线文字 |
+| `data.relations[].description` | 否 | 出口说明（Tooltip）。可以拷目录里的，也可以改写成本流程里这条出口的含义（如「查不到也继续，卡片仍用 open_id 展示」） |
 | `data.relations[].icon` | 视关系 | MCP 等自定义关系必拷（如 `mcp-tools` / `mcp-resources` / `mcp-prompts`）。目录没有 icon 的标准 Success/Failure 不要编造 |
 | `data.relations[]._id` | 视关系 | 自定义关系（MCP Tools/Resources/Prompts、RelationCollection）必拷，用来把出口和图标绑到这条边 |
 | `data.relations[].mcpKind` | 视关系 | MCP 自定义关系透传 `tools` / `resources` / `prompts` |
@@ -393,7 +393,40 @@ Markdown 便签，**默认不要加**。没有对外 HTTP 接口时，流程只�
 - **多个出口 → 同一下游**：一条边，`relations` 里放多项（如 Success + Failure 都接到下一节点）。出口文字由控制台摆放，不要拆边，也不要为此加长步进。
 - **多个出口 → 不同下游**：每个 target 一条边，各自 `relations` 只含该支路的出口。目标放在下一层的不同列/行，让每条边的中点分开，label 才能对上自己那条线。
 - 禁止两条边共用同一 `source` + `target`。
+- 同一条边里每个出口 `name` 只写一次。
 - 普通成功路径只用源节点目录里的成功项（通常 `name=Success`，`label=成功`）。
+
+错误写法：按出口拆成两条边，id 带出口名，Failure 缺 `label`：
+
+```json
+[
+  { "id": "n-get-sender_n-js-sender_Success", "source": "n-get-sender", "target": "n-js-sender",
+    "data": { "relations": [{ "name": "Success", "label": "成功", "description": "查到员工" }] } },
+  { "id": "n-get-sender_n-js-sender_Failure", "source": "n-get-sender", "target": "n-js-sender",
+    "data": { "relations": [{ "name": "Failure" }] } }
+]
+```
+
+正确写法：一条边，`id` 是 `{source}_{target}`，两个出口放进数组，每个都有 `name` 和 `label`（`description` 可选）：
+
+```json
+{
+  "id": "n-get-sender_n-js-sender",
+  "type": "default",
+  "source": "n-get-sender",
+  "target": "n-js-sender",
+  "data": {
+    "relations": [
+      { "name": "Success", "label": "成功", "description": "查到员工" },
+      { "name": "Failure", "label": "失败", "description": "查不到也继续，卡片仍用 open_id 展示" }
+    ]
+  },
+  "label": "",
+  "zIndex": 2000
+}
+```
+
+写完用 `scripts/check.mjs` 检查，`--fix` 能把错误写法合并成正确写法（见下文「检查脚本」）。
 
 多个输出接到同一下游的边（控制台结构）：
 
@@ -475,9 +508,9 @@ MCP 自定义出口示例（源节点 `data.relations` 与边上都要同一份�
         "name": "JsFunctionNode",
         "bundleName": "official/core",
         "bundleVersion": "1.0.0",
-        "icon": "code.svg",
+        "icon": "js.svg",
         "parameters": { "code": "// 处理请求，返回成功标记\n// 入参：msg；出参：{ ok }\n\nreturn { ok: true };" },
-        "label": "JS",
+        "label": "JavaScript",
         "summary": "处理请求"
       }
     }
@@ -514,3 +547,21 @@ MCP 自定义出口示例（源节点 `data.relations` 与边上都要同一份�
 8. 展示：边上 `relations[]` 缺 `label`（或自定义关系缺 `icon` / `_id`）时记 **WARNING**（控制台出口文字/图标会丢）
 
 `level=ERROR` 必须修，**环除外**。`WARNING` 尽量修。只剩环时 `valid: false`、退出码 4 也可以 save-draft / 试跑 / 发布。
+
+## 检查脚本
+
+`workflow validate` 之前先跑 `scripts/check.mjs`，查边、出口和图标：
+
+```bash
+node <skill 目录>/scripts/check.mjs ./flow.json [--fetch [--profile NAME]] [--catalog FILE ...] [--fix] [-o out.json]
+```
+
+| 项 | 说明 |
+|---|---|
+| 目录 | `--fetch` 按画布里的 `bundleName` / `bundleVersion` 调 `bundle nodes`，按边的源节点调 `bundle node-relations`。离线时用 `--catalog` 传这两条命令保存下来的 `--json` 输出。都不给时只查结构、格式和同类一致性 |
+| 边 | 同一对 `source` + `target` 只能一条；`id` = `{source}_{target}`；`data.relations` 是非空数组；出口 `name` 不重复、在目录里存在；每个出口有 `name` 和 `label`（`description` 不查）；边自身 `label` 为空 |
+| 图标 | 执行节点必须有 `data.icon`，是图标文件名（不能是 URL、路径、emoji）；和目录里这个节点类型的 `icon` 一致；同一类型的节点图标相同。`label` 与目录不同、`isTrigger` 不对也会报 |
+| `--fix` | 合并重复边（出口合进一个数组）、改正边 `id`、从目录补出口 `label`、图标、`isTrigger`，清空边自身 `label`。不动 `description`。目录里没有的出口名不改，仍报 ERROR |
+| 退出码 | 0 没有 ERROR（可能有 WARNING）；1 还有 ERROR；3 文件、参数或拉目录失败 |
+
+合并了重复边之后结构变了，再跑一次排版脚本。目录里两个类型共用一个图标是正常的（如 Webhook 触发器和 Webhook 应答都用 `webhook.svg`），脚本按类型对照，不会把这当错误。
