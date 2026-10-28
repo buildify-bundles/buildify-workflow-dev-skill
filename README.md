@@ -8,12 +8,14 @@ Agent Skill：用已安装的 Bundle 节点编排 Buildify 工作流。
 
 ## 安装
 
-把下面整段发给编程 Agent（Cursor、Claude Code、Trae、通义灵码、CodeBuddy、Copilot 等），由它装到本机：
+把下面这段发给编程 Agent（Cursor、Claude Code、Trae、通义灵码、CodeBuddy、Copilot 等），由它装到本机：
 
 ```
 请读取并执行 https://raw.githubusercontent.com/buildify-bundles/buildify-workflow-dev-skill/main/install.md
-把 buildify-workflow-dev skill 装到本机。先问我：全局（所有项目）还是当前仓库；若本机有多个客户端，问要不要一起装。
+把 buildify-workflow-dev skill 装到本机。
 ```
+
+Agent 会自己判断客户端和目录（默认全局，已装过就原地更新），取文件、装好 `buildify` 命令行工具并校验，只在需要 buildify-cli 密钥时问你。想装到当前仓库给团队共享，就在这段话后面加一句「装到当前仓库」。
 
 也可以自己克隆。目录名必须是 `buildify-workflow-dev`，不要用仓库名 `buildify-workflow-dev-skill`。
 
@@ -55,10 +57,9 @@ git clone https://gitee.com/buildify/buildify-workflow-dev-skill.git ~/.cursor/s
 
 ## 依赖
 
-- Python 3.10+
-- `pip install buildify-cli`
+- `buildify-cli`（Python 3.10+）。安装时 Agent 会自己装，优先用 `uv tool install buildify-cli`，本机 Python 版本不够也不用管
 - Node 18+（可选，跑排版和检查脚本用；没有时 Agent 按 flow-json.md 手算坐标、人工核对边和图标）
-- 控制台签发的开放 API 密钥（`keyId.secret`），写入 `~/.buildifyrc`
+- buildify-cli 密钥（`keyId.secret`）：控制台 **系统设置 → API Keys → buildify-cli 密钥** 创建，只在创建时显示一次。发给 Agent 即可，它会写入 `~/.buildifyrc`；自己配置用下面的命令
 
 ```bash
 printf '%s' 'keyId.secret' | buildify config add-profile <工作区别名>

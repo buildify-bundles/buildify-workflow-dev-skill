@@ -19,7 +19,7 @@ description: >-
 用已安装的 Bundle 节点编排工作流：发现节点、写画布 JSON、校验、保存草稿、试跑，试跑通过后确认版本号再发布到已确认的服务器，并用表格汇报。
 
 - 和 `buildify-bundle-dev` 分工：那个「做节点」，这个「用节点编流程」。本 skill 的规则不用来写 Bundle 源码。没有软件包时，先请用户到管理后台「开发中心 → 软件包」创建软件，再交给 bundle-dev 开发和发布（没装先安装），发布后回来接着编排。包在、只是缺节点时直接在该包里开发。
-- 唯一接口是 `buildify` CLI（`pip install buildify-cli`），它调 `buildify-open-api-server`。不要猜 REST 路径，不清楚先 `buildify help`。
+- 唯一接口是 `buildify` CLI（PyPI 包 `buildify-cli`），它调 `buildify-open-api-server`。不要猜 REST 路径，不清楚先 `buildify help`。
 - 机器可读输出一律加 `--json`，按退出码分支（见 [reference/cli.md](reference/cli.md)「退出码」）。
 
 ## 工作流
@@ -424,14 +424,14 @@ buildify --json workflow deploy -p "$PROJ" -w "$WF" --worker "$WKR" \
 
 ## 工作区与密钥（步骤 1）
 
-环境：Python 3.10+，已 `pip install buildify-cli`。执行 CLI，不要读它的源码。
+执行 CLI，不要读它的源码。
 
-找不到 `buildify` 命令时：`python3 --version` 确认 3.10+，再 `python3 -m pip install -U buildify-cli`。版本不够就提示升级，不要改系统 Python。
+找不到 `buildify` 命令时由你装好，不要让用户去装：先试 `~/.local/bin/buildify`（可能只是不在 `PATH` 里），没有就按 [install.md](install.md)「装 buildify CLI」的顺序装（优先 `uv tool install -U buildify-cli`，Python 版本不够也能装）。不用 `sudo`，不改系统 Python。
 
 `buildify --json key test`：
 
 - 退出码 0：用返回的工作区。只有一把密钥时不必加 `--profile`。
-- `data.reason=missing_api_key`：**停止编排**，把 `data.userMessage` 原样发给用户（控制台「空间设置 → 开放 API 密钥 → 创建」，明文只显示一次）。问一个简短 profile 名，用户发来完整 `keyId.secret` 后：
+- `data.reason=missing_api_key`：**停止编排**，请用户到控制台 **系统设置 → API Keys → buildify-cli 密钥** 创建一把并发来完整的 `keyId.secret`（只在创建时显示一次；有多个工作区时在要编排的那个里创建）。说明照 [install.md](install.md)「buildify-cli 密钥」里的模板写，不要原样转发 `data.userMessage`，里面的菜单路径可能是旧的。profile 名不必问，用工作区的简短英文名，没有就用 `default`。收到后：
 
   ```bash
   printf '%s' "$KEY" | buildify config add-profile "$PROFILE"
@@ -447,7 +447,7 @@ buildify --json workflow deploy -p "$PROJ" -w "$WF" --worker "$WKR" \
   2. beta — t-yyyy — 另一把密钥
   ```
 
-- `data.reason=workspace_key_missing`：仓库 `.buildify-workspace` 指向的工作区本机没有密钥。向用户要这个工作区的密钥并 `add-profile`，不要改用别的工作区。
+- `data.reason=workspace_key_missing`：仓库 `.buildify-workspace` 指向的工作区本机没有密钥。请用户在这个工作区的 **系统设置 → API Keys → buildify-cli 密钥** 创建一把发来，再 `add-profile`，不要改用别的工作区。
 - 项目 404 且响应带 `tenantId` / `profile`：先问是不是工作区错了，再决定要不要在这里建项目。
 
 **密钥安全：** 不要 `--api-key`；不要写进仓库、`.env` 或 commit；不要在回复里回显明文。本 CLI 不能创建密钥。
