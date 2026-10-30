@@ -661,7 +661,7 @@ const WRAP_TOLERANCE = 1.15
 /** 每段至少占预算的比例，避免切出只有一两个节点的碎段 */
 const WRAP_MIN_SEGMENT_RATIO = 0.4
 /** 流向预算的上下限（以「节点 + 层距」为单位）：横排按列数、竖排按行数 */
-const WRAP_FLOW_CELLS = { horizontal: [5, 9], vertical: [6, 12] }
+const WRAP_FLOW_CELLS = { horizontal: [5, 9], vertical: [16, 24] }
 /** 交叉轴预算的下限（以「节点 + 节点间距」为单位），少量兄弟节点不拆排 */
 const WRAP_MIN_CROSS_CELLS = 6
 
