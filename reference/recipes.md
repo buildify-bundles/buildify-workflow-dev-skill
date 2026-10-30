@@ -201,6 +201,7 @@ WHERE id = #{msg.output.id}
 buildify --json workflow get-draft -p "$PROJ" -w "$WF" > draft.json
 # 取出 data.workflowJson 作为画布 flow.json，改完后：
 node <skill 目录>/scripts/layout.mjs ./flow.json   # 只在增删了节点/边或用户要求重排时
+# 只动了某个分组里的节点：node <skill 目录>/scripts/layout.mjs ./flow.json --group <分组 id>
 node <skill 目录>/scripts/check.mjs ./flow.json --fetch --fix
 buildify --json workflow validate -p "$PROJ" -f ./flow.json
 buildify --json workflow save-draft -p "$PROJ" -w "$WF" -f ./flow.json
@@ -218,5 +219,5 @@ buildify --json workflow save-draft -p "$PROJ" -w "$WF" -f ./flow.json
 { "id": "n-Gq3aT9xK", "type": "group", "position": { "x": 1000, "y": 0 },
   "data": { "name": "GroupNode", "label": "group", "summary": "查询", "isLayoutNode": true,
             "parameters": { "groupLabel": "查询", "groupColor": "#5b7c99", "groupOpacity": 0.06,
-                            "groupRadius": 12, "groupBorderStyle": "dotted", "groupBorderWidth": 1.5 } } }
+                            "groupRadius": 12, "groupBorderStyle": "dashed", "groupBorderWidth": 1 } } }
 ```
