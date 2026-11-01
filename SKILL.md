@@ -8,7 +8,8 @@ description: >-
   when the user creates, edits, test-runs or publishes a Buildify workflow, or
   mentions 编排流程, 工作流, flow.json, 画布, Webhook 接口, HTTP 接口, 试跑,
   @test, 发布, 版本号, 凭证, 服务器, 节点管理, 批注, 节点分组, 横排, 竖排,
-  连线标签, 多段, 独立接口, 入站认证, 访问地址, 飞书卡片, 失败告警, 缺少节点.
+  连线标签, 多段, 独立接口, 入站认证, 访问地址, 飞书卡片, 失败告警, 缺少节点,
+  部署记录, 历史版本, 绑定服务器, 换服务器, 删除流程, 改名.
   When no software package covers the need, asks the user to create it in the
   admin console (开发中心 → 软件包) before developing and publishing with
   buildify-bundle-dev, then resumes orchestration.
@@ -30,7 +31,7 @@ description: >-
 流程编排进度：
 - [ ] 1. CLI 就绪：buildify --json key test（见「工作区与密钥」）
 - [ ] 2. 定项目、流程（见「沿用已有，只问缺的」）
-- [ ] 3. 定服务器；画布方向默认 TB，试跑通过后默认发布
+- [ ] 3. 定服务器：改已有先 workflow workers（只要 deleteStatus 0）；画布方向默认 TB，试跑通过后默认发布
 - [ ] 4. 发现节点：bundle list → bundle nodes → 只对要放进画布的节点拉 node-properties / node-relations；没有软件包 → 请用户在管理后台「开发中心 → 软件包」创建软件，再开发发布后回到这一步；包在但缺节点 → 在该包里开发后回到这一步
 - [ ] 5. 凭证：只问空槽，三选一
 - [ ] 6. 生成 flow.json：先写节点和连线，再 node scripts/layout.mjs 统一排版（见「生成画布 JSON」）
@@ -52,7 +53,7 @@ description: >-
 
 | 场景 | 读 |
 |---|---|
-| 命令、参数、退出码、推荐循环、save-draft 冲突 | [reference/cli.md](reference/cli.md) |
+| 命令、参数、退出码、推荐循环、save-draft 冲突、改服务器、删除、部署记录、历史版本 | [reference/cli.md](reference/cli.md) |
 | 画布 JSON 字段、排版脚本、边、批注、分组、多段并列、校验顺序 | [reference/flow-json.md](reference/flow-json.md) |
 | 参数里的表达式（按 `uiComponent`）、JS 代码注释、飞书卡片与失败原因 | [reference/expressions.md](reference/expressions.md) |
 | 批注节点字段、HTTP 接口批注正文 | [reference/comment-node.md](reference/comment-node.md) |
@@ -89,7 +90,7 @@ description: >-
 - **表达式**按字段 `uiComponent` 选语法：`JsonExpressionInput` 默认整字段 `"={{msg.xxx}}"` 保留类型，要拼字符串才写 `"=前缀 {{msg.xxx}}"`（`=` 必须是第一个字符，`{{ }}` 里不运算）；`SqlEditor` 用 `#{}` / `${}`；文本及其他用 `{{ }}`。见 [expressions.md](reference/expressions.md)。
 - **JS 节点** `parameters.code` 分段并写中文注释：顶部写入参/出参，每段用 `// --- 段名 ---` 隔开。
 - **批注默认不加。** 例外：每个 HTTP 接口一张（只写接口说明和访问地址）；用户要求；分支条件或调用约定在 `summary` 里写不下、不写会误用。不连线、不写 `parentNode`。初始坐标写在被说明节点的外侧（`TB` 左侧、`LR` 上方），排版脚本会让它跟着最近的节点走，并把整张画布挪进可视区。
-- **分组默认不加。** 多于两段互不连线的逻辑（三段起）时每段一个框，或用户要求时才加。组内节点必须写 `parentNode`；框的宽高和组内坐标交给脚本（标题在框内，上留白 68，有回连时自动加宽）；框背景写 `groupColor: "#5b7c99"`、`groupOpacity: 0.06`。
+- **分组默认不加。** 多于两段互不连线的逻辑（三段起）时每段一个框，或用户要求时才加。组内节点必须写 `parentNode`；框的宽高和组内坐标交给脚本（标题在框内，左右留白 40，上留白 68，有回连时自动加宽）；框背景写 `groupColor: "#5b7c99"`、`groupOpacity: 0.06`。
 - **两段及以上互不连线**时按下一节生成。
 
 ### 保存前检查边和图标
@@ -222,7 +223,7 @@ node <本 skill 目录>/scripts/check.mjs ./flow.json --fetch --fix    # 能确�
 |---|---|---|---|
 | **项目** | 这条流程所在的项目 | 用户点的项目 | `project list`，让他选 |
 | **流程** | 这一条，打开草稿改 | 用户给的名称 | 问新建还是改哪条；新建名没给时建议名放第一项 |
-| **服务器** | 用户点名的；没点名用 `workflow published` 的 `summary.servers` 里部署成功的那台（只用来确定服务器，不输出发布表） | 用户点的那台 | `project workers` 列出让他选 |
+| **服务器** | 用户点名的；没点名用 `workflow workers` 里 `deleteStatus` 为 0 的那台（已绑定）。不要用 `workflow published` 来选服务器 | 用户点的那台 | `project workers` 列出让他选 |
 | **凭证** | 草稿里该槽已写的 `{type, name}` | 用户点的那条 | 只问空槽 |
 
 对用户只用名称；项目 id、workerId、hostname 留在内部。`-p` / `-w` 传 public id（`p-…` / `w-…`），不要传中文名称。
@@ -265,6 +266,8 @@ node <本 skill 目录>/scripts/check.mjs ./flow.json --fetch --fix    # 能确�
 - 缺的时候不要自己挑第一条、唯一一条、或名称里带「本地/测试」的项。
 - 新建名没给时，按需求起一个短名（如「当前时间 API」）放进流程题第一项并标「推荐」。不要另起一轮只问名字，也不要用没展示过的名字直接 create。
 - 服务器：`workflow create --worker`、`test-run --worker`、`deploy --worker` 用同一台。离线的不能试跑或发布；用户点了离线的要说明并请改选在线的。
+- 改已有先 `workflow workers`。`deleteStatus` 0 是已绑定，才能 `deploy`；1 是待移除，不能拿来试跑或发布。只有一台已绑定且在线时直接用，多台再问。一台都没有时从 `project workers` 里选，用户点了之后先 `assign-workers`，再发布。`deploy` 报「未绑定」就是还没做这一步。
+- 改名、加/换/移除服务器、删除项目或流程都不是默认步骤。用户提出来才做，先点选确认。细则见「改名称、改服务器、删除」。
 - Webhook 路径等节点参数按表单写进 JSON，校验 ERROR 再按节点汇总一次问，不要为每个字段单独打断一轮。
 
 ### 凭证
@@ -371,7 +374,7 @@ WARNING 不影响退出码，但也要修：`data.icon` 缺失、边上 `relatio
    3. 先只保存草稿
    ```
 
-   「重新检测」：重新拉 `project workers` 取地址，从第 2 步再来。「换一台」：按「沿用已有，只问缺的」列出服务器。「只保存草稿」：停在步骤 8。
+   「重新检测」：重新拉 `project workers` 取地址，从第 2 步再来。「换一台」：按「沿用已有，只问缺的」列出服务器；新服务器还没绑定（`workflow workers` 里没有 `deleteStatus` 0）时，确认后先 `assign-workers`，再继续试跑和发布。「只保存草稿」：停在步骤 8。
 4. **通了再试跑。** 后台启动 `test-run`，在它超时前向测试地址发一次请求，再等它返回：
 
    ```bash
@@ -416,11 +419,30 @@ buildify --json workflow deploy -p "$PROJ" -w "$WF" --worker "$WKR" \
   --version-name "v20261005-184620" --remark "首次上线 /test2 当前时间接口" --wait
 ```
 
-`--version-name` 和 `--remark` 只写到这个发布版本，不改流程描述。`--wait` 在 CLI 内轮询到结束，**不要**再循环调 `workflow deployment`。返回的 `versionName` / `publishRemark` / `summary` 直接用来画表；失败时退出码 4，把 `summary.servers[].message` 原样告诉用户。
+`--version-name` 和 `--remark` 只写到这个发布版本，不改流程描述。`--wait` 在 CLI 内轮询到结束，**不要**再循环调 `workflow deployment`，也不要接着拉 `workflow deployments`。返回的 `versionName` / `publishRemark` / `summary` 直接用来画表；失败时退出码 4，把 `summary.servers[].message` 原样告诉用户。`--worker` 必须已经是 `deleteStatus` 0 的绑定；报「未绑定」就先按「改名称、改服务器、删除」加上再发。
 
 ### 汇报
 
-保存草稿、试跑、发布后都用 Markdown 表汇报，模板、状态符号映射和禁写项见 [reference/report.md](reference/report.md)。要点：服务器用表不用列表；表格单元格不放彩色 emoji；只写名称不写 id；不输出节点信息（HTTP 访问地址除外）。
+保存草稿、试跑、发布后都用 Markdown 表汇报，模板、状态符号映射和禁写项见 [reference/report.md](reference/report.md)。要点：服务器用表不用列表；表格单元格不放彩色 emoji；只写名称不写 id；不输出节点信息（HTTP 访问地址除外）。用户事后问部署记录或历史版本时，用同一份状态符号，见 report.md「事后查询」。
+
+## 改名称、改服务器、删除
+
+这些命令会改运行位置或删数据。用户没提出来就不要跑。能点选就点选，确认前不要执行。命令和 409 含义见 [reference/cli.md](reference/cli.md)。
+
+- **改名**：`project update` / `workflow update` 必传 `-n`。用户没说要改简介就不传 `--remark`，原简介会留下。
+- **加服务器**：`workflow assign-workers`，多台就重复 `--worker`。已经绑定的会跳过。流程还没发布时只是绑上，`needDeploy` 为 false。已经发布过时，会把**当前线上版本**部署到新服务器（`needDeploy: true`，带 `deploymentId`），不是把草稿发出去。告诉用户这一点。不要自己轮询；用户要看这次结果时再调一次 `workflow deployment -d`。响应里有 `warnings` 就原样说明。正在移除的服务器会 409，把 `msg` 告诉用户，等移除完成或改走强制移除。
+- **移除服务器**：`workflow unassign-workers`。没发布过的立刻解绑。已发布的变成待移除并下线，绑定还在，服务器确认前 `workflow delete` 会 409。
+- **强制移除**：只在用户说明服务器已经不在，或普通移除一直停在待移除时才用 `workflow force-unassign-workers`。它立刻删掉绑定，离线服务器下次同步时丢掉这个流程。
+- **删除**：`project delete` 只在项目里没有流程时能成功，否则 409。`workflow delete` 只在没有任何绑定（含待移除）时能成功，否则 409。要删流程就先移除服务器，待移除消不掉时再问要不要强制移除，然后才能删。
+
+## 部署记录与历史版本
+
+刚 `deploy --wait` 完不要查这两类。用户问过去的发布、哪一版在跑、或要看某一版画布时才查。
+
+- `workflow deployments`：部署记录，新的在前。翻页用 `--page`，默认一页 10 条，`hasNext` 为真且用户还要看时再取下一页。
+- `workflow versions`：历史版本，含当前草稿（`isDraft`）和仍绑在服务器上的版本（`isRunning`）。
+- `workflow get-version --version-id v-…`：那一版的 `workflowJson`。只读，没有 save-draft 用的乐观锁 `version`。用户要恢复成草稿时先确认，再把这份画布走正常的 validate / save-draft（锁版本仍由 save-draft 自己读当前草稿）。不要直接 deploy。
+- 退出码 2 且 `msg` 含「缺少权限」：密钥是有效的，缺的是消息里的 scope（部署记录要 `project:workflow:view_deployment`，历史版本要 `project:workflow:view_version`）。请用户到控制台给这把密钥补权限，不要当成密钥失效去重建。
 
 ## 工作区与密钥（步骤 1）
 
@@ -448,6 +470,7 @@ buildify --json workflow deploy -p "$PROJ" -w "$WF" --worker "$WKR" \
   ```
 
 - `data.reason=workspace_key_missing`：仓库 `.buildify-workspace` 指向的工作区本机没有密钥。请用户在这个工作区的 **系统设置 → API Keys → buildify-cli 密钥** 创建一把发来，再 `add-profile`，不要改用别的工作区。
-- 项目 404 且响应带 `tenantId` / `profile`：先问是不是工作区错了，再决定要不要在这里建项目。
+- 项目 404 且响应带 `tenantId` / `profile`：先问是不是工作区错了，再决定要不要在这里建项目。密钥不在允许的项目范围内时，项目也会 404。
+- 退出码 2 且 `msg` 含「缺少权限」：密钥有效，缺的是消息里的 scope。请用户在控制台给这把密钥补上，不要当成 401 去重建密钥。
 
 **密钥安全：** 不要 `--api-key`；不要写进仓库、`.env` 或 commit；不要在回复里回显明文。本 CLI 不能创建密钥。

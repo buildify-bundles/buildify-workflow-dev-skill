@@ -197,6 +197,8 @@ WHERE id = #{msg.output.id}
 
 ## 4. 改已有流程
 
+改已有时服务器用 `workflow workers` 里 `deleteStatus` 为 0 的那台，不要用 `workflow published` 来选。用户要看某一历史版本的画布时用 `workflow get-version`，确认恢复后再把那份 `workflowJson` 走下面的校验和 save-draft。
+
 ```bash
 buildify --json workflow get-draft -p "$PROJ" -w "$WF" > draft.json
 # 取出 data.workflowJson 作为画布 flow.json，改完后：
@@ -211,7 +213,7 @@ buildify --json workflow save-draft -p "$PROJ" -w "$WF" -f ./flow.json
 
 ## 5. 节点分组
 
-多于两段互不连线的独立逻辑，或用户要求分组时才加。只写分组框的基础字段和组内节点的 `parentNode`，框的位置、宽高（标题在框内，上留白 68，组内回连自动加宽）和组内坐标交给排版脚本。字段形状见 [flow-json.md](flow-json.md)「节点分组」，不要在这里另抄一份。
+多于两段互不连线的独立逻辑，或用户要求分组时才加。只写分组框的基础字段和组内节点的 `parentNode`，框的位置、宽高（标题在框内，左右留白 40，上留白 68，组内回连自动加宽）和组内坐标交给排版脚本。字段形状见 [flow-json.md](flow-json.md)「节点分组」，不要在这里另抄一份。
 
 三段各一个框时，第 i 段的框写粗略原点 `TB` `{x: i*1000, y: 0}`（`LR` `{x: 0, y: i*1000}`），子节点不写坐标，跑完脚本即可：
 

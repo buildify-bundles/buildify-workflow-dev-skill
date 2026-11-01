@@ -44,6 +44,8 @@ buildify --json config profiles
 
 `--json` 时 stdout 只有一行 `{ok, code, msg, http_status, data}`。
 
+退出码 2 且 `msg` 含「缺少权限」：密钥有效，缺的是消息里的 scope（如 `project:workflow:view_deployment`、`project:workflow:view_version`）。请用户到控制台给这把密钥补上，不要当成 401 去重建。401 才是密钥无效。项目不在密钥允许范围内时返回 404 `项目不存在`。
+
 ## 命令
 
 选定 profile 后，下面每条都加上同一个 `--profile`（只有一把密钥、或已由 `.buildify-workspace` / current 选定则不必）。
@@ -60,17 +62,28 @@ buildify --json config profiles
 | `bundle doc -b NAME` | README Markdown，参数含义不清时再读 |
 | `bundle cred-types / cred-properties` | 凭证类型与表单，创建凭证前用 |
 | `project list / create / get` | 项目 |
+| `project update -p ID -n "新名称" [--remark 简介]` | 改项目名。不传 `--remark` 就保留原简介。先问用户 |
+| `project delete -p ID` | 删项目。项目里还有流程时 HTTP 409。先问用户 |
 | `project credentials -p ID [-b bundle]` | 可引用凭证元数据，无密钥 |
 | `project create-credential -p ID -b bundle --type TYPE` | 仅当用户选「现在创建」。缺 name/label/data 时 `--json` 退出 3，`data.reason=credential_input_required`，返回默认名称和表单字段；确认后用 stdin `--file -` 创建。响应无密钥。不要 `--data` 上 argv |
 | `project workers -p ID [--online-only]` | 服务器（worker）列表，含 `workerName` / `remark` / 在线状态 / `externalHost` / `httpPort`。给用户看时写 **workerName — 描述 — 在线/离线**（`remark` 为空写「无描述」），不展示 hostname |
-| `workflow list / create` | 流程 |
+| `workflow list / create` | 流程。`create --worker` 会同时绑定服务器 |
+| `workflow update -p ID -w WF -n "新名称" [--remark 简介]` | 改流程名。不传 `--remark` 就保留原简介。先问用户 |
+| `workflow workers -p ID -w WF` | 已绑定的服务器，含 `workerName` / `remark` / 在线状态 / `deleteStatus`。0 已绑定，1 待移除。改已有流程时用它定服务器 |
+| `workflow assign-workers -p ID -w WF --worker wkr_…` | 加服务器，可重复 `--worker`。已绑定的跳过。未发布只绑定（`needDeploy: false`）。已发布则把**当前线上版本**部署到新服务器（`needDeploy: true`，带 `deploymentId`），不是发布草稿。正在移除的服务器返回 409 |
+| `workflow unassign-workers -p ID -w WF --worker wkr_…` | 移除。未发布立刻解绑。已发布变成待移除并下线，绑定还在，直到服务器确认 |
+| `workflow force-unassign-workers -p ID -w WF --worker wkr_…` | 立刻解绑。只在服务器已经不在、或普通移除停在待移除时，用户确认后再用 |
+| `workflow delete -p ID -w WF` | 删流程。还有绑定（含待移除）时 HTTP 409。先问用户 |
 | `workflow get-draft / save-draft` | 草稿；save-draft 自动先读 `version` |
 | `workflow validate -p ID -f flow.json` | 无副作用语义校验；有 ERROR 时退出 4。图里的环允许，不要拆边去消；先确认环上有离开循环的出口，没有就补退出条件。只剩环且已有出口时仍可 save-draft / 试跑 / 发布 |
 | `workflow test-run -p ID -f flow.json --worker wkr_… [--timeout 60]` | 阻塞直到完成或超时，默认跑整张图。用户明确要单节点时才加 `--start-node` 和 `--inputs` |
 | `workflow cancel-test --execution-id … --worker …` | 取消试跑 |
-| `workflow deploy -p ID -w WF --worker wkr_… --version-name … [--remark 说明] --wait` | 发布已 save-draft 的草稿。不要再传 `-f` |
-| `workflow published -p ID -w WF` | 线上版本及 `summary.servers`。改已有流程时用它确定已部署的服务器；用户事后问线上版本时画表。刚 `deploy --wait` 完不要再调 |
-| `workflow deployment -p ID -w WF -d deploy_…` | 一次部署的状态。`--wait` 已在 CLI 内轮询，Agent 不要再循环调 |
+| `workflow deploy -p ID -w WF --worker wkr_… --version-name … [--remark 说明] --wait` | 发布已 save-draft 的草稿。不要再传 `-f`。`--worker` 必须已是 `deleteStatus` 0 的绑定 |
+| `workflow published -p ID -w WF` | 线上版本及 `summary.servers`。用户事后问线上版本时画表。刚 `deploy --wait` 完不要再调。不要用它来选服务器 |
+| `workflow deployments -p ID -w WF [--page N] [--page-size N] [--deployment deploy_…] [--begin "yyyy-MM-dd HH:mm:ss"] [--end "…"]` | 部署记录，新的在前。用户问历史时才调。权限 `project:workflow:view_deployment`。`--json` 的 `data` 是分页：`total` / `page` / `pageSize` / `data` / `hasNext` |
+| `workflow deployment -p ID -w WF -d deploy_…` | 一次部署的状态。`--wait` 已在 CLI 内轮询，Agent 不要再循环调。`assign-workers` 返回了 `deploymentId` 且用户要看结果时，调一次即可 |
+| `workflow versions -p ID -w WF [--page N] [--page-size N]` | 历史版本，新的在前，含草稿（`isDraft`）和仍绑在服务器上的版本（`isRunning`）。权限 `project:workflow:view_version` |
+| `workflow get-version -p ID -w WF --version-id v-…` | 某一版的画布 `workflowJson`。只读，没有草稿锁的 `version`。要恢复成草稿先问用户，再走正常的 save-draft |
 
 `-p` / `-w` 传 public id（`p-…` / `w-…`），不要传中文名称。
 
@@ -114,4 +127,20 @@ wait
 
 `test-run` 的 HTTP 读超时 = 服务端 timeout + 30s。超时返回 `reason: "timeout"` 和已收到的部分事件，再用 `workflow cancel-test` 停 worker。
 
-`workflow deploy` 在发布时传 `--version-name`（版本号）和 `--remark`（发布说明，写入该版本）。用户没有特殊指定版本号时，用确认当下的本地时间 `v` + `yyyyMMdd-HHmmss`（如 `v20261005-184620`），并写进 `--version-name`。默认 `--wait`。轮询走 `?statusOnly=true`，结束再 GET 一次完整摘要。刚发布完用这次返回的 `versionName` / `publishRemark` / `summary` 画表即可。
+`workflow deploy` 在发布时传 `--version-name`（版本号）和 `--remark`（发布说明，写入该版本）。用户没有特殊指定版本号时，用确认当下的本地时间 `v` + `yyyyMMdd-HHmmss`（如 `v20261005-184620`），并写进 `--version-name`。默认 `--wait`。轮询走 `?statusOnly=true`，结束再 GET 一次完整摘要。刚发布完用这次返回的 `versionName` / `publishRemark` / `summary` 画表即可，不要再调 `workflow deployments`。
+
+## 改项目、改服务器、删除
+
+用户没提出来不要跑。确认前不要执行。
+
+- `project update` / `workflow update` 必传 `-n`。不传 `--remark` 就保留原简介。
+- `assign-workers` 加的是绑定。流程已发布时顺带把**当前线上版本**发到新服务器，草稿还在草稿里，之后仍要按推荐循环 save-draft / 试跑 / deploy。`needDeploy: false` 表示没有新的部署（还没发布，或这些服务器本来就绑着）。
+- `unassign-workers` 对已发布流程只是开始下线。绑定还在时 `workflow delete` 返回 409「当前流程存在关联部署服务器」。
+- `project delete` 在项目还有流程时返回 409「项目存在流程,请先删除流程」。
+- 强制移除会立刻删掉绑定。普通移除能完成时不要用它。
+
+## 部署记录与历史版本
+
+用户问过去的发布或某一版画布时才查。`--page` 从 1 起，`--page-size` 最大 100，默认 10。时间参数带空格，要加引号。
+
+`workflow versions` 里 `isDraft: true` 是当前草稿，`isRunning: true` 是仍绑在某台服务器上的版本。`get-version` 的 `workflowJson` 不能当作 save-draft 的锁版本；恢复时用它当画布内容，锁版本仍让 save-draft 自己去读当前草稿。
