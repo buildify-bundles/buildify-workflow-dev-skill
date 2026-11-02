@@ -2,7 +2,7 @@
 
 Agent Skill：用已安装的 Bundle 节点编排 Buildify 工作流。
 
-与 `buildify-bundle-dev` 分工：那个是「做节点」，这个是「用节点编流程」。编排时发现没有对应软件包，会先请你到管理后台「开发中心 → 软件包」创建软件，再检查本机有没有 `buildify-bundle-dev`，没有就按 <https://buildify.cn/buildify-bundle-dev/install.md> 安装；创建完成后再用它开发和发布，然后回来接着编排。
+与 `buildify-bundle-dev` 分工：那个是「做节点」，这个是「用节点编流程」。编排时发现没有对应的软件包或节点，会先告诉你不存在，并给出默认方案：按 `buildify-bundle-dev` 规范、对接服务的官方文档实现，附带软件包名称和图标。你确认一次后（已经说过「直接做」就不再问），它检查本机有没有 `buildify-bundle-dev`（没有或版本旧就按 <https://buildify.cn/buildify-bundle-dev/install.md> 安装或更新），用它创建软件包、开发和发布，然后回来接着编排。不用你去控制台建软件包。
 
 技能目录名是 `buildify-workflow-dev`，仓库名是 `buildify-workflow-dev-skill`。装好后根目录必须直接有 `SKILL.md`（`name: buildify-workflow-dev`）。
 
@@ -43,7 +43,8 @@ git clone https://gitee.com/buildify/buildify-workflow-dev-skill.git ~/.cursor/s
 
 | 文件 | 内容 |
 |---|---|
-| `SKILL.md` | 主入口：编排清单、画布硬规则、多段画布、没有软件包时先到开发中心创建再交给 bundle-dev、项目/流程/服务器/凭证点选、HTTP 接口与试跑、失败告警、发布 |
+| `SKILL.md` | 主入口：编排清单、画布硬规则、多段画布、缺软件包或节点时的处理、项目/流程/服务器/凭证点选、HTTP 接口与试跑、失败告警、发布 |
+| `reference/missing-bundle.md` | 缺软件包或节点：默认方案（bundle-dev 规范 + 官方文档、软件包信息、图标）、一次确认、交给 bundle-dev 建包开发发布后回来 |
 | `reference/report.md` | 保存 / 试跑 / 发布后的汇报表格与状态符号 |
 | `install.md` | 把 `buildify-workflow-dev` 装到各客户端 skills 目录 |
 | `reference/cli.md` | `buildify` CLI 命令与退出码 |
@@ -57,7 +58,7 @@ git clone https://gitee.com/buildify/buildify-workflow-dev-skill.git ~/.cursor/s
 
 ## 依赖
 
-- `buildify-cli`（Python 3.10+）。安装时 Agent 会自己装，优先用 `uv tool install buildify-cli`，本机 Python 版本不够也不用管
+- `buildify-cli` 1.2.0+（Python 3.10+）。安装时 Agent 会自己装，优先用 `uv tool install buildify-cli`，本机 Python 版本不够也不用管
 - Node 18+（可选，跑排版和检查脚本用；没有时 Agent 按 flow-json.md 手算坐标、人工核对边和图标）
 - buildify-cli 密钥（`keyId.secret`）：控制台 **系统设置 → API Keys → buildify-cli 密钥** 创建，只在创建时显示一次。发给 Agent 即可，它会写入 `~/.buildifyrc`；自己配置用下面的命令
 
@@ -72,11 +73,12 @@ buildify --json key test
 
 `scripts/layout.mjs` 的布局函数逐行移植自控制台前端（`eventflow-cloud-frontend`）：
 
-- `composables/applyLayout.js`：`doApplyLayout`、`doApplyGroupLayout` 及其依赖（尺寸、扇出层距、同层对齐、过宽扇出拆排、共用收尾节点后置、多段并排/货架折排、全图折行预算、长链折行、分组包络、批注跟随）
-- `components/workflows/edges/routingMetrics.js`：`LOOP_METRICS`、`isWrapRects`、`getGroupLoopInsets`（组内回连与折行连线的留白）
+- `composables/applyLayout.js`：`doApplyLayout`、`doApplyGroupLayout` 及其依赖（尺寸、主链加权、拉直短错位、扇出与出口文字层距、同层对齐、过宽扇出拆排、共用收尾节点后置、多段并排/货架折排、外层折行预算、长链折行、分组包络、批注跟随）
+- `components/workflows/edges/routingMetrics.js`：`LOOP_METRICS`、`LABEL_METRICS`、`SMOOTH_JOG`、`isWrapRects`、`getGroupLoopInsets`（组内回连留白、标签层距、拉直阈值）
+- `components/workflows/edges/edgeLabelSize.js`：出口文字胶囊尺寸。脚本没有 canvas，用它无 canvas 时的字数估算分支；`relationHasCustomIcon` 取自 `utils/mcpServerDefaults.js`
 
-当前对齐到前端 `ef7a56c`（2026-10-30）的 `applyLayout.js`：分组左右留白 **40**；竖排折行预算 **6–12 行**，横排 **5–9 列**。默认卡片下，单条主链 `TB` 约 7 张起折、单个节点扇出约 7 个下游起拆，`LR` 约 6 张起折、约 10 个下游起拆。共用收尾不变：至少 3 个旁支汇到同一个没有出边的节点时，主体先排再折行，收尾节点放到尽头并对齐最后一段。前端改了这两个文件的常量或流程时，把改动同步到脚本里对应的函数，再用两边对同一批样例（TB / LR 主链 3–40 张、扇出 2–16 个含汇合、共用收尾、多段、三段分组、组内回环、组内长链折行、嵌套分组和 `--group`、批注）对比坐标和分组尺寸，必须完全一致。脚本只比前端多两步：排版前检查图结构，整图排版后把顶层节点平移到 `x ≥ 40`、`y ≥ 24`。
+当前对齐到前端 `e156d61`（2026-11-01，保守折行）的 `applyLayout.js`：竖排普通层距 **74**，扇出 **104 / 120**（带出口文字的扇出、汇合约 116）；横排 **140**，扇出 **170**。折行预算只给外层：竖排 **16 行**、横排 **12 列**，至少 8 层、超出 1.3 倍才折，只在仅一条线跨过的空隙切；分组内部不折行、不拆排。拆排要求至少 6 个且全是叶子的下游。默认卡片下，单条主链 `TB` 21 张起折、`LR` 16 张起折；单个节点扇出 `TB` 16 个、`LR` 32 个下游起拆。前端改了这几个文件的常量或流程时，把改动同步到脚本里对应的函数，再用两边对同一批样例（TB / LR 主链 3–40 张含长出口名和多出口、扇出 2–40 个含汇合和子树、共用收尾、多段、三段分组、组内回环、嵌套分组和 `--group`、批注）对比坐标和分组尺寸，必须完全一致。脚本只比前端多三处：排版前检查图结构，统计重算的分组数和让开的批注数，整图排版后把顶层节点平移到 `x ≥ 40`、`y ≥ 24`。
 
 ## 使用
 
-对话里提到编排流程、工作流、试跑、发布、Webhook 接口、凭证、批注、节点分组、横排/竖排、入站认证、访问地址、飞书卡片、失败告警、缺少节点，或显式 `/buildify-workflow-dev` 即可触发。
+对话里提到编排流程、工作流、试跑、发布、Webhook 接口、凭证、批注、节点分组、横排/竖排、入站认证、访问地址、飞书卡片、失败告警、缺少节点、改凭证、删除凭证，或显式 `/buildify-workflow-dev` 即可触发。

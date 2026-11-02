@@ -107,7 +107,7 @@ for f in reference/cli.md reference/flow-json.md reference/expressions.md refere
    ~/.local/bin/uv tool install -U buildify-cli
    ```
 
-装完 `buildify help` 确认。找不到命令时多半是 `~/.local/bin`（Windows 是 `%USERPROFILE%\.local\bin`）不在 `PATH` 里：后续直接用绝对路径调用，汇报里提一句把它加进 `PATH`，不要替用户改 shell 配置。全部失败才把最后一条命令的输出告诉用户。
+装完 `buildify help` 确认，再看 `buildify version`：低于 **1.2.0**（没有 `project update-credential` 等凭证命令）时按第 1 条升级一次，升不上去就照常继续，只在汇报里说明改凭证、删凭证暂时用不了。找不到命令时多半是 `~/.local/bin`（Windows 是 `%USERPROFILE%\.local\bin`）不在 `PATH` 里：后续直接用绝对路径调用，汇报里提一句把它加进 `PATH`，不要替用户改 shell 配置。全部失败才把最后一条命令的输出告诉用户。
 
 ## 5. buildify-cli 密钥（只有这一步要用户）
 
@@ -144,7 +144,7 @@ buildify --json key test
 ## 6. 可选项：只检查，不安装
 
 - `node --version` ≥ 18：排版和检查脚本可用（不用 `npm install`），用 `node "$DEST/scripts/layout.mjs" --help` 确认。没有或版本太低时不要装 Node，只在汇报里说：编排时改用手算坐标、人工核对边和图标。
-- 同一 skills 根目录下有没有 `buildify-bundle-dev/SKILL.md`。没有不用现在装：编排时没有软件包会先请用户到管理后台「开发中心 → 软件包」创建，再按 <https://buildify.cn/buildify-bundle-dev/install.md> 安装后开发和发布。
+- 同一 skills 根目录下有没有 `buildify-bundle-dev/SKILL.md`。没有不用现在装：编排时缺软件包或节点，用户确认默认方案后再按 <https://buildify.cn/buildify-bundle-dev/install.md> 安装（旧版不支持建包时原地更新），由它建包、开发和发布。
 
 ## 7. 汇报
 

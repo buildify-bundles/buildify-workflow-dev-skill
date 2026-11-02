@@ -4,7 +4,7 @@
  *
  *   node scripts/layout.mjs flow.json [--direction TB|LR] [--group <分组 id>] [-o out.json] [--check]
  *
- * 布局函数与控制台 composables/applyLayout.js、edges/routingMetrics.js 逐行对应，
+ * 布局函数与控制台 composables/applyLayout.js、edges/routingMetrics.js、edges/edgeLabelSize.js 逐行对应，
  * 改动常量或流程时两边一起改，否则脚本排出的画布和控制台点「自动排列」不一致。
  *
  * 退出码：0 成功；1 --check 发现坐标需要变化；3 文件或图结构有问题。
@@ -19,16 +19,48 @@ const dagre = require('./vendor/dagre.min.js')
 // routingMetrics.js
 // ---------------------------------------------------------------------------
 
+/**
+ * 回环路由与分组留白共用的尺寸。
+ * 分组框要按这些值给组内回环留出通道，否则回环只能绕到框外。
+ */
 const LOOP_METRICS = {
+  /** 非端点节点的避让外扩 */
   obstaclePadding: 20,
+  /** 回连离开源节点、进入目标节点前的引线长度 */
   loopLead: 22,
+  /** 相邻主干、相邻回环之间的间距 */
   laneGap: 14,
+  /** 回环距离区段内最外侧节点的间距 */
   loopMargin: 28,
+  /** 与分组边框平行时至少保持的距离，否则算贴边 */
   groupClearance: 18,
+  /** 组内回环与分组边框之间留出的距离 */
   loopGroupGap: 32,
 }
 
+/**
+ * 顺向边与标签共用的尺寸。自动排版按这些值给标签留层距，否则标签只能贴着箭头或压线。
+ */
+const LABEL_METRICS = {
+  /** 扇出/扇入主干距节点的距离；至少两倍圆角，拐弯才不会被短主干裁掉 */
+  busLead: 48,
+  /** 标签与节点之间的最小净空 */
+  labelNodePadding: 8,
+  /** 箭头沿路径占的长度，与 EdgeArrowMarkers 的 markerWidth 一致 */
+  arrowLength: 12,
+  /** 标签边缘和箭头之间再留的空隙 */
+  arrowGap: 10,
+}
+
+const CORNER_RADIUS = 24
+
+/** 短于两倍圆角的横移没有中间直线，圆角会被裁成折痕 */
+const SMOOTH_JOG = CORNER_RADIUS * 2
+
+/** 嵌套回环在引线方向上每层多伸出的长度，最多算 3 层 */
 const LOOP_LEVEL_LEAD = 6
+
+/** 分组留白在路由所需之外再多留一点，避免恰好压在贴边阈值上 */
 const INSET_SLACK = 2
 
 function flowAxes(vertical) {
@@ -41,7 +73,10 @@ function isBackward(sourceRect, targetRect, axes) {
   return targetRect[axes.lo] < sourceRect[axes.lo] - 0.5
 }
 
-/** 折行边：流向上倒退，但目标整体落在源的下一段（横排在下方、竖排在右侧）。 */
+/**
+ * 折行边：流向上倒退，但目标整体落在源的下一段（横排在下方、竖排在右侧）。
+ * 走两段之间的空隙即可，不按回环绕外侧。axes 需含 lo / crossLo / crossHi。
+ */
 function isWrapRects(sourceRect, targetRect, axes) {
   return Boolean(sourceRect && targetRect)
     && targetRect[axes.lo] < sourceRect[axes.lo] - 0.5
@@ -57,10 +92,12 @@ function rectBounds(rects) {
   }
 }
 
+/** 回环引线从节点伸出后与边框保持 loopGroupGap 所需的距离 */
 function loopLeadClearance(level) {
   return LOOP_METRICS.loopLead + Math.min(level, 3) * LOOP_LEVEL_LEAD + LOOP_METRICS.loopGroupGap
 }
 
+/** 回环外侧通道距内容边缘的距离，再加上与边框的间距 */
 function loopChannelClearance(level) {
   return LOOP_METRICS.obstaclePadding
     + LOOP_METRICS.loopMargin
@@ -68,6 +105,11 @@ function loopChannelClearance(level) {
     + LOOP_METRICS.loopGroupGap
 }
 
+/**
+ * 分组内部的回连需要的四边最小留白（相对内容外沿）。
+ * rects 为组内节点矩形 { id, left, top, right, bottom }，edges 为两端都在组内的边。
+ * 竖排时回环绕到两端偏向的一侧，不偏时走右侧；横排一律走底侧，避开左上角的标题。
+ */
 function getGroupLoopInsets({ rects = [], edges = [], vertical = true, bounds } = {}) {
   const insets = { top: 0, right: 0, bottom: 0, left: 0 }
   if (!rects.length || !edges.length) return insets
@@ -118,15 +160,85 @@ function getGroupLoopInsets({ rects = [], edges = [], vertical = true, bounds } 
 }
 
 // ---------------------------------------------------------------------------
+// edgeLabelSize.js
+// ---------------------------------------------------------------------------
+
+/** 输出关系图标：无自定义图标时回退为 output（utils/mcpServerDefaults.js） */
+function relationIcon(icon) {
+  let value = String(icon ?? '').trim()
+  if (!value) return 'output'
+  if (value.includes('/') || value.includes('.')) return 'output'
+  if (value.startsWith('icon-')) value = value.slice(5)
+  if (!value || value === 'default') return 'output'
+  return value
+}
+
+function relationHasCustomIcon(icon) {
+  return relationIcon(icon) !== 'output'
+}
+
+/** 与 DefaultEdge.vue 的 .edge-label / .edge-label-text 保持一致 */
+const LABEL_HEIGHT = 18
+const PAD_INLINE = 8
+const BORDER = 1
+const GAP = 3
+const ICON = 12
+const NAME_MAX = 180
+const NAME_MAX_MULTI = 148
+const BADGE_PAD = 3
+const BADGE_MIN = 14
+/** 运行态条数按最宽的常见值预留，计数变化不改变标签尺寸 */
+const COUNT_SAMPLE = '9,999'
+const COUNT_MARGIN = 2
+
+/** 没有 canvas 时按字号估算：全角字约等于字号，半角约 0.6 倍 */
+function estimateText(text) {
+  let width = 0
+  for (const char of text) width += char.charCodeAt(0) > 255 ? 10 : 6
+  return width
+}
+
+/** 控制台在浏览器里用 canvas 量字宽，脚本用控制台无 canvas 时的估算分支 */
+function textWidth(text) {
+  return Math.ceil(estimateText(text))
+}
+
+/**
+ * 连线标签胶囊的外框尺寸。只按第一条关系计算，与渲染一致；没有关系时返回 null。
+ * running 时在关系名后预留条数宽度。
+ */
+function measureEdgeLabelSize(relations, { running = false } = {}) {
+  if (!relations?.length) return null
+  const multi = relations.length > 1
+  const name = String(relations[0]?.label ?? '')
+  let width = Math.min(textWidth(name), multi ? NAME_MAX_MULTI : NAME_MAX)
+  if (relationHasCustomIcon(relations[0]?.icon)) width += ICON + GAP
+  if (running) width += COUNT_MARGIN + textWidth(COUNT_SAMPLE)
+  if (multi) {
+    const badge = Math.max(BADGE_MIN, textWidth(`+${relations.length - 1}`) + BADGE_PAD * 2)
+    width += badge + (running ? COUNT_MARGIN : GAP)
+  }
+  return { width: width + PAD_INLINE * 2 + BORDER * 2, height: LABEL_HEIGHT }
+}
+
+/** 连线对象上的标签尺寸 */
+function edgeLabelSize(edge, options) {
+  return measureEdgeLabelSize(edge?.data?.relations, options)
+}
+
+// ---------------------------------------------------------------------------
 // applyLayout.js
 // ---------------------------------------------------------------------------
 
+/** 与 DefaultNode `.flow-node` min-width / --fn-card-h 对齐；仅作未测到尺寸时的兜底，不作为间距下限。 */
 const DEFAULT_NODE_WIDTH = 248
 const DEFAULT_NODE_HEIGHT = 63
 
+/** 标题在框内左上角。顶边留白要放下标题，并和节点状态条拉开距离 */
 const GROUP_PAD_X = 40
 const GROUP_PAD_TOP = 68
 const GROUP_PAD_BOTTOM = 24
+/** 标题在框内左上角，不再在框外占高 */
 const GROUP_TITLE_OVERHANG = 0
 const GROUP_MIN_WIDTH = 240
 const GROUP_MIN_HEIGHT = 112
@@ -148,6 +260,7 @@ function resolveDim(values, fallback) {
   return fallback
 }
 
+/** 所有布局路径共用同一尺寸优先级：实测 dimensions -> style -> 持久化宽高 -> 兜底。 */
 function getNodeSize(node, fallback = {}) {
   const fallbackWidth = fallback.width ?? DEFAULT_NODE_WIDTH
   const fallbackHeight = fallback.height ?? DEFAULT_NODE_HEIGHT
@@ -234,6 +347,7 @@ function createHierarchy(nodes) {
   return { byId, childrenByParent, parentOf }
 }
 
+/** 下游超过该数量时，把同层兄弟收得更紧，避免底下一层被拉得过宽。 */
 const FANOUT_SPREAD_AFTER = 2
 
 function isHorizontalDir(direction) {
@@ -244,26 +358,53 @@ function isGroupType(node) {
   return node?.type === 'group'
 }
 
-function getOutDegrees(scopeEdges) {
+/** 每个节点的出度、入度，以及全图最大出度。 */
+function getDegrees(scopeEdges) {
   const outDegree = new Map()
+  const inDegree = new Map()
   let maxFanout = 0
   for (const edge of scopeEdges) {
     const next = (outDegree.get(edge.source) || 0) + 1
     outDegree.set(edge.source, next)
+    inDegree.set(edge.target, (inDegree.get(edge.target) || 0) + 1)
     maxFanout = Math.max(maxFanout, next)
   }
-  return { outDegree, maxFanout }
+  return { outDegree, inDegree, maxFanout }
 }
 
+/** 标签放进层间空隙之外再留的余量 */
+const LABEL_RANK_SLACK = 6
+
+/**
+ * 相邻两层之间放下这条边标签所需的层距。标签要落在线段正中，箭头一侧要让出箭头和空隙，
+ * 源节点一侧也留同样的距离，否则标签只能偏向源节点。
+ * 扇出 / 扇入时标签落在分叉后或汇合前的那段上，再让出共用主干的长度。
+ */
+function labelRankSeparation(label, horizontal, bus) {
+  const along = horizontal ? label.width : label.height
+  const arrowSide = LABEL_METRICS.arrowLength + LABEL_METRICS.arrowGap
+  return Math.ceil(along
+    + arrowSide * 2
+    + LABEL_RANK_SLACK
+    + (bus ? LABEL_METRICS.busLead : 0))
+}
+
+/** 普通层距。组内与画布共用，排出来的节点间距一致。 */
 function baseRankSeparation(direction) {
-  return isHorizontalDir(direction) ? 140 : 90
+  // 横排：主干分叉后标签落在进入目标的水平段上；竖排单线保持紧凑
+  return isHorizontalDir(direction) ? 140 : 74
 }
 
+/**
+ * 扇出层距。两条及以上的顺向边在源节点附近分叉，标签落在进入目标前的分支上。
+ * 竖排时主干留给圆角，其余高度留给标签所在的竖线。
+ * 只作用于扇出节点所在的那一层，其余层仍用普通层距。
+ */
 function fanoutRankSeparation(direction, outDegree) {
   if (outDegree < 2) return baseRankSeparation(direction)
   const horizontal = isHorizontalDir(direction)
   if (horizontal) return outDegree <= FANOUT_SPREAD_AFTER ? 140 : 170
-  return outDegree <= FANOUT_SPREAD_AFTER ? 120 : 136
+  return outDegree <= FANOUT_SPREAD_AFTER ? 104 : 120
 }
 
 function rankExtent(node, horizontal) {
@@ -290,14 +431,36 @@ function groupUnitsByRank(units, direction) {
   return { horizontal, axis, byRank, centers: [...byRank.keys()].sort((a, b) => a - b) }
 }
 
-function respaceRanks(units, outDegree, direction) {
-  const { axis, byRank, centers } = groupUnitsByRank(units, direction)
+/**
+ * 按层重新拉开间距：整层一起沿流向平移，不改变层内顺序和交叉轴坐标，
+ * 因此既不会引入交叉也不会造成重叠。相比给单条边加 minlen，这样不会空出整层
+ * 让别的分支节点落进去。
+ */
+function respaceRanks(units, scopeEdges, direction) {
+  const { horizontal, axis, byRank, centers } = groupUnitsByRank(units, direction)
   if (centers.length < 2) return
+
+  const { outDegree, inDegree } = getDegrees(scopeEdges)
+  const rankOf = new Map()
+  centers.forEach((center, index) => {
+    for (const node of byRank.get(center)) rankOf.set(node.id, index)
+  })
+  const labelNeeds = new Map()
+  for (const edge of scopeEdges) {
+    if (!edge.label) continue
+    const from = rankOf.get(edge.source)
+    const to = rankOf.get(edge.target)
+    if (from == null || to == null || Math.abs(from - to) !== 1) continue
+    const gap = Math.max(from, to)
+    const bus = (outDegree.get(edge.source) || 0) >= 2 || (inDegree.get(edge.target) || 0) >= 2
+    const needed = labelRankSeparation(edge.label, horizontal, bus)
+    labelNeeds.set(gap, Math.max(labelNeeds.get(gap) || 0, needed))
+  }
 
   const base = baseRankSeparation(direction)
   let shift = 0
   for (let i = 1; i < centers.length; i++) {
-    let needed = base
+    let needed = Math.max(base, labelNeeds.get(i) || 0)
     for (const node of byRank.get(centers[i - 1])) {
       const degree = isGroupType(node) ? 0 : (outDegree.get(node.id) || 0)
       needed = Math.max(needed, fanoutRankSeparation(direction, degree))
@@ -310,6 +473,10 @@ function respaceRanks(units, outDegree, direction) {
   }
 }
 
+/**
+ * 同一层里分组和普通节点高度差很大时，Dagre 按中心对齐会把小节点吊在分组腰部。
+ * 改为沿流向顶齐（TB）或左齐（LR），阅读顺序更接近组内第一排节点。
+ */
 function alignRankStart(units, direction) {
   if (units.length < 2) return
   const { horizontal, byRank } = groupUnitsByRank(units, direction)
@@ -326,32 +493,14 @@ function alignRankStart(units, direction) {
 }
 
 /** 扇出到至少这么多个下游时才考虑拆排 */
-const SPLIT_MIN_FANOUT = 4
-
-/** 下游节点中只由 root 一支到达的部分（入边全部来自这一支），遇到汇合点为止。 */
-function exclusiveSubtrees(roots, outs, ins, byId) {
-  const owner = new Map(roots.map(node => [node.id, node.id]))
-  const result = new Map(roots.map(node => [node.id, [node]]))
-  let changed = true
-  while (changed) {
-    changed = false
-    for (const [id, rootId] of [...owner]) {
-      for (const childId of outs.get(id) || []) {
-        if (owner.has(childId)) continue
-        const parents = ins.get(childId) || []
-        if (!parents.every(parentId => owner.get(parentId) === rootId)) continue
-        owner.set(childId, rootId)
-        result.get(rootId).push(byId.get(childId))
-        changed = true
-      }
-    }
-  }
-  return result
-}
+const SPLIT_MIN_FANOUT = 6
 
 /**
- * 过宽的扇出层拆成多排：每个下游连同它独占的子树作为一块，交错排进几排，
+ * 过宽的扇出层拆成多排：每个下游作为一块，交错排进几排，
  * 排与排沿流向错开；其余后续节点整体后移，让出拆排多出来的深度。
+ * 两排时下排节点正好落在上排的缝隙里，连线不用绕。
+ * 只处理整层都来自同一扇出、且下游全是没有出边的叶子的情况；
+ * 带子树的扇出拆排后各支交错难以阅读，保持 Dagre 的结果。
  */
 function splitWideRanks(units, scopeEdges, direction, budget, nodesep) {
   if (!budget?.cross || units.length <= SPLIT_MIN_FANOUT) return
@@ -362,15 +511,13 @@ function splitWideRanks(units, scopeEdges, direction, budget, nodesep) {
   const lead = node => rankLead(node, horizontal)
 
   const outs = new Map()
-  const ins = new Map()
+  const hasOutbound = new Set(scopeEdges.map(edge => edge.source))
   for (const edge of scopeEdges) {
     const source = byId.get(edge.source)
     const target = byId.get(edge.target)
     if (!source || !target || lead(target) <= lead(source)) continue
     if (!outs.has(source.id)) outs.set(source.id, [])
-    if (!ins.has(target.id)) ins.set(target.id, [])
     outs.get(source.id).push(target.id)
-    ins.get(target.id).push(source.id)
   }
 
   const fanouts = units
@@ -384,10 +531,10 @@ function splitWideRanks(units, scopeEdges, direction, budget, nodesep) {
       .find(item => item.nodes.some(node => targetIds.has(node.id)))
     if (!band || band.nodes.length !== targetIds.size) continue
     if (!band.nodes.every(node => targetIds.has(node.id))) continue
+    if (band.nodes.some(node => isGroupType(node) || hasOutbound.has(node.id))) continue
 
-    const subtrees = exclusiveSubtrees(band.nodes, outs, ins, byId)
     const blocks = band.nodes.map((root) => {
-      const nodes = subtrees.get(root.id)
+      const nodes = [root]
       const box = boundsOf(nodes)
       return {
         nodes,
@@ -401,7 +548,7 @@ function splitWideRanks(units, scopeEdges, direction, budget, nodesep) {
     const crossMin = Math.min(...blocks.map(block => block.crossMin))
     const crossMax = Math.max(...blocks.map(block => block.crossMin + block.crossSize))
     const extent = crossMax - crossMin
-    if (extent <= budget.cross) continue
+    if (extent <= budget.cross * WRAP_TOLERANCE) continue
     const rowCount = Math.min(Math.ceil(extent / budget.cross), blocks.length)
     if (rowCount < 2) continue
 
@@ -457,11 +604,17 @@ function splitWideRanks(units, scopeEdges, direction, budget, nodesep) {
   }
 }
 
+/**
+ * 交叉轴间距。多路扇出时收紧，让一簇下游贴在父节点下方/右侧；
+ * 交给 Dagre 统一排布，而不是布局后再平移子树——后者会把两棵子树叠在一起。
+ */
 function crossAxisSeparation(direction, maxFanout, maxWidth, maxHeight) {
   const dense = maxFanout > FANOUT_SPREAD_AFTER
   if (isHorizontalDir(direction)) {
+    // 横排时 nodesep 是上下间距
     return dense ? 56 : Math.min(96, Math.max(72, Math.round(maxHeight * 1.15)))
   }
+  // 竖排时 nodesep 是左右间距：同层兄弟更紧凑
   return dense
     ? Math.max(40, Math.round(maxWidth * 0.16))
     : Math.min(72, Math.max(48, Math.round(maxWidth * 0.2)))
@@ -503,9 +656,16 @@ function directChildForScope(nodeId, scopeId, hierarchy) {
   return null
 }
 
+function maxLabel(a, b) {
+  if (!a) return b
+  if (!b) return a
+  return { width: Math.max(a.width, b.width), height: Math.max(a.height, b.height) }
+}
+
+/** 将跨 group 的边折叠到当前层直接子节点代理，并稳定去重；折叠后的标签取各边外框的最大值。 */
 function getScopeEdges(scopeId, units, edges, hierarchy) {
   const unitIds = new Set(units.map(node => node.id))
-  const seen = new Set()
+  const byKey = new Map()
   const result = []
   for (const edge of edges) {
     const source = directChildForScope(edge?.source, scopeId, hierarchy)
@@ -513,9 +673,15 @@ function getScopeEdges(scopeId, units, edges, hierarchy) {
     if (!source || !target || source.id === target.id) continue
     if (!unitIds.has(source.id) || !unitIds.has(target.id)) continue
     const key = `${source.id}\0${target.id}`
-    if (seen.has(key)) continue
-    seen.add(key)
-    result.push({ source: source.id, target: target.id })
+    const label = edgeLabelSize(edge)
+    const existing = byKey.get(key)
+    if (existing) {
+      existing.label = maxLabel(existing.label, label)
+      continue
+    }
+    const entry = { source: source.id, target: target.id, sourceHandle: edge.sourceHandle ?? null, label }
+    byKey.set(key, entry)
+    result.push(entry)
   }
   return result
 }
@@ -655,13 +821,13 @@ function packComponents(components, direction, originX, originY, gap, budget) {
 /** 折行后整体宽高比的目标值，接近常见屏幕 */
 const WRAP_ASPECT = 1.6
 /** 层数少于此值不折行 */
-const WRAP_MIN_BANDS = 3
+const WRAP_MIN_BANDS = 8
 /** 超出预算这么多才折行，避免刚好超一点就切出一小段 */
-const WRAP_TOLERANCE = 1.15
+const WRAP_TOLERANCE = 1.3
 /** 每段至少占预算的比例，避免切出只有一两个节点的碎段 */
-const WRAP_MIN_SEGMENT_RATIO = 0.4
-/** 流向预算的上下限（以「节点 + 层距」为单位）：横排按列数、竖排按行数 */
-const WRAP_FLOW_CELLS = { horizontal: [5, 9], vertical: [6, 12] }
+const WRAP_MIN_SEGMENT_RATIO = 0.5
+/** 流向预算（以「节点 + 层距」为单位）：横排按列数、竖排按行数，超出才折行 */
+const WRAP_FLOW_CELLS = { horizontal: 12, vertical: 16 }
 /** 交叉轴预算的下限（以「节点 + 节点间距」为单位），少量兄弟节点不拆排 */
 const WRAP_MIN_CROSS_CELLS = 6
 
@@ -671,8 +837,8 @@ function wrapGap(direction) {
 }
 
 /**
- * 全图共用的折行预算：按叶子节点总数估算铺满目标宽高比时的流向长度。
- * 分组和外层都按同一预算折行，各分组每段长度一致，拼在一起才整齐。
+ * 外层的折行预算：流向上放得下固定格数就不折行，只有明显过长的流程才折。
+ * 分组内部不折行，预算只给外层用。
  */
 function computeWrapBudget(nodes, direction) {
   const horizontal = isHorizontalDir(direction)
@@ -683,28 +849,12 @@ function computeWrapBudget(nodes, direction) {
   const ranksep = baseRankSeparation(direction)
   const cellFlow = (horizontal ? maxWidth : maxHeight) + ranksep
   const cellCross = (horizontal ? maxHeight : maxWidth) + nodesep
-  const area = leaves.length * cellFlow * cellCross
-  const ideal = horizontal ? Math.sqrt(area * WRAP_ASPECT) : Math.sqrt(area / WRAP_ASPECT)
-  const [minCells, maxCells] = WRAP_FLOW_CELLS[horizontal ? 'horizontal' : 'vertical']
-  const flow = Math.min(Math.max(ideal, minCells * cellFlow), maxCells * cellFlow) - ranksep
+  const flow = WRAP_FLOW_CELLS[horizontal ? 'horizontal' : 'vertical'] * cellFlow - ranksep
   const cross = Math.max(
     horizontal ? flow / WRAP_ASPECT : flow * WRAP_ASPECT,
     WRAP_MIN_CROSS_CELLS * cellCross - nodesep,
   )
   return { flow, cross }
-}
-
-/** 分组内部的预算扣掉分组自身的留白，嵌套一层扣一次 */
-function groupWrapBudget(budget, direction) {
-  if (!budget) return budget
-  const horizontal = isHorizontalDir(direction)
-  const padFlow = horizontal ? GROUP_PAD_X * 2 : GROUP_PAD_TOP + GROUP_PAD_BOTTOM
-  const padCross = horizontal ? GROUP_PAD_TOP + GROUP_PAD_BOTTOM : GROUP_PAD_X * 2
-  const floor = Math.min(DEFAULT_NODE_WIDTH, DEFAULT_NODE_HEIGHT) * 2
-  return {
-    flow: Math.max(budget.flow - padFlow, floor),
-    cross: Math.max(budget.cross - padCross, floor),
-  }
 }
 
 /**
@@ -743,27 +893,20 @@ function edgesAcrossGap(bands, index, bandOf, scopeEdges) {
   return count
 }
 
-/**
- * 在可选的层间空隙里选最接近目标位置的切点，
- * 前后一层内跨线更少的空隙优先，尽量不把一组扇出拆到两段。
- */
-function pickCut(bands, target, allowed, bandOf, scopeEdges) {
+/** 在可选的层间空隙里选最接近目标位置的切点 */
+function pickCut(bands, target, allowed) {
   const gapAt = i => (bands[i].end + bands[i + 1].start) / 2
   let nearest = allowed[0]
   for (const i of allowed) {
     if (Math.abs(gapAt(i) - target) < Math.abs(gapAt(nearest) - target)) nearest = i
   }
-  let best = nearest
-  let bestCross = edgesAcrossGap(bands, nearest, bandOf, scopeEdges)
-  for (const i of [nearest - 1, nearest + 1]) {
-    if (!allowed.includes(i)) continue
-    const cross = edgesAcrossGap(bands, i, bandOf, scopeEdges)
-    if (cross < bestCross) {
-      best = i
-      bestCross = cross
-    }
-  }
-  return best
+  return nearest
+}
+
+function median(values) {
+  const sorted = [...values].sort((a, b) => a - b)
+  const middle = Math.floor(sorted.length / 2)
+  return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2
 }
 
 /** 在 1..maxCount 段里选折行后整体最接近目标宽高比的段数（段间距计入交叉轴） */
@@ -784,11 +927,13 @@ function aspectSegmentCount(length, crossLength, horizontal, maxCount, gap) {
 }
 
 /**
- * 长链折行：Dagre 排成一条后，流向长度超出预算时按层切成几段，每段平移回起点并沿交叉轴错开。
- * 分组内严格按预算定段数；外层（fitAspect）在预算段数以内选最接近目标宽高比的段数。
+ * 长链折行：Dagre 排成一条后，流向长度明显超出预算时按层切成几段，每段平移回起点并沿交叉轴错开。
+ * 横排超长换到下一行，竖排超长换到下一列，每段仍沿原方向走。
+ * 只在仅有一条连线跨过的空隙切，找不到这样的空隙就不折行，宁可保持一条长链。
+ * 段数在预算段数以内选最接近目标宽高比的；各段按主链中心等距排开，主链落在同一组参考线上。
  * 折行时返回最后一段的节点，未折行返回 null。
  */
-function wrapLongFlow(units, scopeEdges, direction, budget, fitAspect = false) {
+function wrapLongFlow(units, scopeEdges, direction, budget) {
   if ((direction !== 'LR' && direction !== 'TB') || !budget?.flow) return null
   const horizontal = isHorizontalDir(direction)
   const bands = flowBands(units, horizontal)
@@ -800,9 +945,7 @@ function wrapLongFlow(units, scopeEdges, direction, budget, fitAspect = false) {
   const gap = wrapGap(direction)
   const maxCount = Math.min(Math.ceil(length / budget.flow), bands.length)
   const box = boundsOf(units)
-  const count = fitAspect
-    ? aspectSegmentCount(length, horizontal ? box.height : box.width, horizontal, maxCount, gap)
-    : maxCount
+  const count = aspectSegmentCount(length, horizontal ? box.height : box.width, horizontal, maxCount, gap)
   if (count < 2) return null
   const minSegment = budget.flow * WRAP_MIN_SEGMENT_RATIO
 
@@ -810,6 +953,10 @@ function wrapLongFlow(units, scopeEdges, direction, budget, fitAspect = false) {
   bands.forEach((band, index) => {
     for (const node of band.nodes) bandOf.set(node.id, index)
   })
+  const clean = new Set()
+  for (let j = 0; j < bands.length - 1; j++) {
+    if (edgesAcrossGap(bands, j, bandOf, scopeEdges) <= 1) clean.add(j)
+  }
 
   const end = bands[bands.length - 1].end
   const cuts = []
@@ -818,48 +965,206 @@ function wrapLongFlow(units, scopeEdges, direction, budget, fitAspect = false) {
     const segmentStart = last < 0 ? origin : bands[last + 1].start
     const allowed = []
     for (let j = last + 1; j < bands.length - 1; j++) {
+      if (!clean.has(j)) continue
       if (bands[j].end - segmentStart < minSegment) continue
       if (end - bands[j + 1].start < minSegment * (count - i)) continue
       allowed.push(j)
     }
     if (!allowed.length) break
     const target = segmentStart + (end - segmentStart) / (count - i + 1)
-    cuts.push(pickCut(bands, target, allowed, bandOf, scopeEdges))
+    cuts.push(pickCut(bands, target, allowed))
   }
   if (!cuts.length) return null
 
   const segments = []
   let from = 0
   for (const cut of [...cuts, bands.length - 1]) {
-    segments.push(bands.slice(from, cut + 1))
+    segments.push(bands.slice(from, cut + 1).flatMap(band => band.nodes))
     from = cut + 1
   }
 
+  const mainNodes = new Set()
+  for (const key of mainChainEdges(units, scopeEdges)) {
+    for (const id of key.split('\0')) mainNodes.add(id)
+  }
+  const crossAxisMin = horizontal ? 'minY' : 'minX'
+  const crossAxisSize = horizontal ? 'height' : 'width'
+  const metrics = segments.map((nodes) => {
+    const main = nodes.filter(node => mainNodes.has(node.id))
+    const center = median((main.length ? main : nodes).map(node => crossCenter(node, horizontal)))
+    const segmentBox = boundsOf(nodes)
+    const crossMin = segmentBox[crossAxisMin]
+    return {
+      nodes,
+      center,
+      lead: center - crossMin,
+      trail: crossMin + segmentBox[crossAxisSize] - center,
+    }
+  })
+  const stride = Math.max(...metrics.map(item => item.lead))
+    + Math.max(...metrics.map(item => item.trail))
+    + gap
+
   const flowAxis = horizontal ? 'x' : 'y'
   const crossAxis = horizontal ? 'y' : 'x'
-  let crossCursor = null
-  for (const segment of segments) {
-    const nodes = segment.flatMap(band => band.nodes)
-    const flowShift = origin - segment[0].start
-    const segmentBox = boundsOf(nodes)
-    const crossMin = horizontal ? segmentBox.minY : segmentBox.minX
-    const crossSize = horizontal ? segmentBox.height : segmentBox.width
-    const crossShift = crossCursor == null ? 0 : crossCursor - crossMin
-    for (const node of nodes) {
+  const baseCenter = metrics[0].center
+  metrics.forEach((item, index) => {
+    const flowShift = origin - Math.min(...item.nodes.map(node => rankLead(node, horizontal)))
+    const crossShift = index ? baseCenter + index * stride - item.center : 0
+    for (const node of item.nodes) {
       node.position = {
         ...node.position,
         [flowAxis]: (node.position?.[flowAxis] ?? 0) + flowShift,
         [crossAxis]: (node.position?.[crossAxis] ?? 0) + crossShift,
       }
     }
-    crossCursor = crossMin + crossShift + crossSize + gap
+  })
+  return segments[segments.length - 1]
+}
+
+function edgeKey(edge) {
+  return `${edge.source}\0${edge.target}`
+}
+
+/**
+ * 主链：按节点数计的最长路径（回边不计）。拓扑序之外的节点在环里，连到它们的边忽略。
+ * 返回主链上各条边的 key。
+ */
+function mainChainEdges(units, scopeEdges) {
+  const ids = new Set(units.map(node => node.id))
+  const outs = new Map()
+  const pending = new Map(units.map(node => [node.id, 0]))
+  for (const edge of scopeEdges) {
+    if (!ids.has(edge.source) || !ids.has(edge.target)) continue
+    if (!outs.has(edge.source)) outs.set(edge.source, [])
+    outs.get(edge.source).push(edge.target)
+    pending.set(edge.target, pending.get(edge.target) + 1)
   }
-  return segments[segments.length - 1].flatMap(band => band.nodes)
+  const order = units.filter(node => pending.get(node.id) === 0).map(node => node.id)
+  for (let index = 0; index < order.length; index++) {
+    for (const target of outs.get(order[index]) || []) {
+      const left = pending.get(target) - 1
+      pending.set(target, left)
+      if (left === 0) order.push(target)
+    }
+  }
+
+  const depth = new Map(order.map(id => [id, 1]))
+  const previous = new Map()
+  let tail = order[0]
+  for (const id of order) {
+    for (const target of outs.get(id) || []) {
+      if (!depth.has(target)) continue
+      if (depth.get(id) + 1 > depth.get(target)) {
+        depth.set(target, depth.get(id) + 1)
+        previous.set(target, id)
+      }
+    }
+    if (depth.get(id) > depth.get(tail)) tail = id
+  }
+
+  const keys = new Set()
+  let current = tail
+  while (previous.has(current)) {
+    const source = previous.get(current)
+    keys.add(edgeKey({ source, target: current }))
+    current = source
+  }
+  return keys
+}
+
+/** 主链权重最高，一进一出的链式边次之，Dagre 会优先把它们排短排直，旁支分到两侧 */
+const MAIN_CHAIN_WEIGHT = 4
+const CHAIN_WEIGHT = 2
+
+function edgeWeights(units, scopeEdges) {
+  const { outDegree, inDegree } = getDegrees(scopeEdges)
+  const main = mainChainEdges(units, scopeEdges)
+  return new Map(scopeEdges.map((edge) => {
+    const key = edgeKey(edge)
+    if (main.has(key)) return [key, MAIN_CHAIN_WEIGHT]
+    const chain = outDegree.get(edge.source) === 1 && inDegree.get(edge.target) === 1
+    return [key, chain ? CHAIN_WEIGHT : 1]
+  }))
+}
+
+function crossCenter(node, horizontal) {
+  const { w, h } = getNodeSize(node)
+  return horizontal ? (node.position?.y ?? 0) + h / 2 : (node.position?.x ?? 0) + w / 2
+}
+
+/**
+ * Dagre 排完后常留下几十像素的错位，画出来是一段短 Z 形或曲线。
+ * 按流向逐层处理只有一条入边的节点：与上游中心线的偏差在阈值内、且挪过去与同层节点仍隔着 nodesep 时，
+ * 沿交叉轴对齐上游。逐层推进，单线链会整段跟着对齐；同一上游的多条出边只拉直偏差最小的一支，
+ * 上游有多个出口把手时把手不在中线上，不处理。分组的把手不在中线上，两端是分组也不处理。
+ */
+function straightenJogs(units, scopeEdges, direction, nodesep) {
+  if (units.length < 2) return
+  const { horizontal, byRank, centers } = groupUnitsByRank(units, direction)
+  if (centers.length < 2) return
+  const reversed = direction === 'BT' || direction === 'RL'
+  const crossAxis = horizontal ? 'y' : 'x'
+  const flowOrder = reversed ? [...centers].reverse() : centers
+  const stepOf = new Map()
+  flowOrder.forEach((center, index) => {
+    for (const node of byRank.get(center)) stepOf.set(node.id, index)
+  })
+  const byId = new Map(units.map(node => [node.id, node]))
+  const inbound = new Map()
+  const handlesBySource = new Map()
+  for (const edge of scopeEdges) {
+    if (!inbound.has(edge.target)) inbound.set(edge.target, [])
+    inbound.get(edge.target).push(edge.source)
+    if (!handlesBySource.has(edge.source)) handlesBySource.set(edge.source, new Set())
+    handlesBySource.get(edge.source).add(edge.sourceHandle ?? null)
+  }
+  const threshold = Math.max(SMOOTH_JOG, nodesep)
+  const flowSpan = (node) => {
+    const lead = rankLead(node, horizontal)
+    return [lead, lead + rankExtent(node, horizontal)]
+  }
+  const fits = (node, crossStart) => {
+    const size = horizontal ? getNodeSize(node).h : getNodeSize(node).w
+    const [flowLo, flowHi] = flowSpan(node)
+    return units.every((other) => {
+      if (other === node) return true
+      const [otherLo, otherHi] = flowSpan(other)
+      if (otherHi <= flowLo || otherLo >= flowHi) return true
+      const otherStart = other.position?.[crossAxis] ?? 0
+      const otherSize = horizontal ? getNodeSize(other).h : getNodeSize(other).w
+      return crossStart + size + nodesep <= otherStart || otherStart + otherSize + nodesep <= crossStart
+    })
+  }
+
+  const straightened = new Set()
+  for (let step = 1; step < flowOrder.length; step++) {
+    const moves = []
+    for (const node of byRank.get(flowOrder[step])) {
+      if (isGroupType(node)) continue
+      const sources = inbound.get(node.id) || []
+      if (sources.length !== 1) continue
+      const source = byId.get(sources[0])
+      if (!source || isGroupType(source) || stepOf.get(source.id) !== step - 1) continue
+      if ((handlesBySource.get(source.id)?.size ?? 0) > 1) continue
+      const delta = crossCenter(source, horizontal) - crossCenter(node, horizontal)
+      if (Math.abs(delta) < 0.5 || Math.abs(delta) >= threshold) continue
+      moves.push({ node, source, delta })
+    }
+    moves.sort((a, b) => Math.abs(a.delta) - Math.abs(b.delta))
+    for (const { node, source, delta } of moves) {
+      if (straightened.has(source.id)) continue
+      const next = (node.position?.[crossAxis] ?? 0) + delta
+      if (!fits(node, next)) continue
+      node.position = { ...node.position, [crossAxis]: next }
+      straightened.add(source.id)
+    }
+  }
 }
 
 function layoutGraph(units, scopeEdges, direction, marginx, marginy, budget) {
   if (!units.length) return false
-  const { outDegree, maxFanout } = getOutDegrees(scopeEdges)
+  const { maxFanout } = getDegrees(scopeEdges)
   const graph = new dagre.graphlib.Graph()
   const { ranksep, nodesep } = computeSeparations(units, direction, maxFanout)
   graph.setGraph({
@@ -871,6 +1176,7 @@ function layoutGraph(units, scopeEdges, direction, marginx, marginy, budget) {
     marginy,
   })
   graph.setDefaultEdgeLabel(() => ({}))
+  // 横排按框体中线对齐，标题占位上下对称，组外节点才能和组内节点同一水平线
   const horizontal = isHorizontalDir(direction)
   const titleTop = node => (isGroupType(node) ? GROUP_TITLE_OVERHANG : 0)
   const titleBottom = node => (horizontal && isGroupType(node) ? GROUP_TITLE_OVERHANG : 0)
@@ -878,8 +1184,9 @@ function layoutGraph(units, scopeEdges, direction, marginx, marginy, budget) {
     const { w, h } = getNodeSize(node)
     graph.setNode(node.id, { width: w, height: h + titleTop(node) + titleBottom(node) })
   }
+  const weights = edgeWeights(units, scopeEdges)
   for (const edge of scopeEdges) {
-    graph.setEdge(edge.source, edge.target)
+    graph.setEdge(edge.source, edge.target, { weight: weights.get(edgeKey(edge)) ?? 1, minlen: 1 })
   }
 
   try {
@@ -900,7 +1207,8 @@ function layoutGraph(units, scopeEdges, direction, marginx, marginy, budget) {
     }
   }
 
-  respaceRanks(units, outDegree, direction)
+  straightenJogs(units, scopeEdges, direction, nodesep)
+  respaceRanks(units, scopeEdges, direction)
   alignRankStart(units, direction)
   splitWideRanks(units, scopeEdges, direction, budget, nodesep)
   return true
@@ -936,13 +1244,22 @@ function findSharedSinks(units, scopeEdges) {
  * 交叉轴上对齐主链结束的那一段（折行后的最后一段），汇过来的线沿各列旁边走到尽头再汇合；
  * 放在整体中间时，前几段的线要穿过末段的折返线。
  */
-function placeSharedSinks(sinks, core, coreEdges, direction, tail = core) {
+function placeSharedSinks(sinks, core, coreEdges, sinkEdges, direction, tail = core) {
   const horizontal = isHorizontalDir(direction)
   const reversed = direction === 'BT' || direction === 'RL'
   const box = boundsOf(core)
   const tailBox = boundsOf(tail)
-  const { nodesep } = computeSeparations(core, direction, getOutDegrees(coreEdges).maxFanout)
-  const gap = fanoutRankSeparation(direction, SHARED_SINK_MIN_INBOUND)
+  const { nodesep } = computeSeparations(core, direction, getDegrees(coreEdges).maxFanout)
+  // 只有最后一层直连收尾节点的边，标签落在这段空隙里
+  const bands = flowBands(core, horizontal)
+  const lastBand = reversed ? bands[0] : bands[bands.length - 1]
+  const lastIds = new Set(lastBand?.nodes.map(node => node.id))
+  const gap = sinkEdges.reduce(
+    (needed, edge) => (edge.label && lastIds.has(edge.source)
+      ? Math.max(needed, labelRankSeparation(edge.label, horizontal, true))
+      : needed),
+    fanoutRankSeparation(direction, SHARED_SINK_MIN_INBOUND),
+  )
   const sizes = sinks.map(node => getNodeSize(node))
   const crossTotal = sizes.reduce((sum, size) => sum + (horizontal ? size.h : size.w), 0)
     + nodesep * (sinks.length - 1)
@@ -964,20 +1281,21 @@ function placeSharedSinks(sinks, core, coreEdges, direction, tail = core) {
  * Dagre 排版 + 长链折行。共用收尾节点先不参与：连向它的长线会让 Dagre 把主链一层层挤歪，
  * 折行时又让每个层间空隙都显得「被跨过」。主体排好、折好后再把收尾节点放到尽头。
  */
-function layoutScopeUnits(units, scopeEdges, direction, marginx, marginy, budget, fitAspect) {
+function layoutScopeUnits(units, scopeEdges, direction, marginx, marginy, budget) {
   const sinks = findSharedSinks(units, scopeEdges)
   if (sinks.length) {
     const sinkIds = new Set(sinks.map(node => node.id))
     const core = units.filter(node => !sinkIds.has(node.id))
     const coreEdges = scopeEdges.filter(edge => !sinkIds.has(edge.source) && !sinkIds.has(edge.target))
     if (core.length && layoutGraph(core, coreEdges, direction, marginx, marginy, budget)) {
-      const tail = wrapLongFlow(core, coreEdges, direction, budget, fitAspect)
-      placeSharedSinks(sinks, core, coreEdges, direction, tail ?? core)
+      const tail = wrapLongFlow(core, coreEdges, direction, budget)
+      const sinkEdges = scopeEdges.filter(edge => sinkIds.has(edge.target))
+      placeSharedSinks(sinks, core, coreEdges, sinkEdges, direction, tail ?? core)
       return true
     }
   }
   if (!layoutGraph(units, scopeEdges, direction, marginx, marginy, budget)) return false
-  wrapLongFlow(units, scopeEdges, direction, budget, fitAspect)
+  wrapLongFlow(units, scopeEdges, direction, budget)
   return true
 }
 
@@ -990,7 +1308,7 @@ function layoutDirectChildren(scopeId, children, edges, direction, hierarchy, bu
   const marginy = scopeId == null ? 24 : 0
   const components = connectedComponents(units, scopeEdges)
   if (components.length <= 1) {
-    layoutScopeUnits(units, scopeEdges, direction, marginx, marginy, budget, scopeId == null)
+    layoutScopeUnits(units, scopeEdges, direction, marginx, marginy, budget)
     return
   }
 
@@ -1001,7 +1319,7 @@ function layoutDirectChildren(scopeId, children, edges, direction, hierarchy, bu
   for (const component of ordered) {
     const ids = new Set(component.nodes.map(node => node.id))
     const componentEdges = scopeEdges.filter(edge => ids.has(edge.source) && ids.has(edge.target))
-    if (layoutScopeUnits(component.nodes, componentEdges, direction, 0, 0, budget, scopeId == null)) {
+    if (layoutScopeUnits(component.nodes, componentEdges, direction, 0, 0, budget)) {
       laidOut.push(component.nodes)
     }
   }
@@ -1009,6 +1327,7 @@ function layoutDirectChildren(scopeId, children, edges, direction, hierarchy, bu
   packComponents(laidOut, direction, marginx, marginy, gap, budget)
 }
 
+/** 组内回连所需的留白，与默认的 GROUP_PAD_* 逐边取大 */
 function groupPadding(children, scopeEdges, direction) {
   const rects = children.map((node) => {
     const { w, h } = getNodeSize(node, nodeSizeFallback(node))
@@ -1067,6 +1386,7 @@ function fitGroupToChildren(group, children, padding = {
   const groupW = Math.max(Math.round(contentW + padding.left + padding.right), GROUP_MIN_WIDTH)
   const contentH = maxY - minY
   const groupH = Math.max(Math.round(contentH + padding.top + padding.bottom), GROUP_MIN_HEIGHT)
+  // 内容比最小尺寸小时居中，但每一边都不少于各自的留白
   const offsetX = clampOffset(Math.round((groupW - contentW) / 2), padding.left, groupW - contentW - padding.right) - minX
   const offsetY = clampOffset(Math.round((groupH - contentH) / 2), padding.top, groupH - contentH - padding.bottom) - minY
   for (const rect of rects) {
@@ -1082,6 +1402,7 @@ function fitGroupToChildren(group, children, padding = {
   )
 }
 
+/** 批注与被说明节点之间的最小净空 */
 const DECORATION_GAP = 24
 
 function nodeRect(node) {
@@ -1105,6 +1426,7 @@ function rectsOverlap(a, b, gap) {
     && a.y + a.h + gap > b.y
 }
 
+/** 批注 / 文本跟随离它最近的节点，记下相对该节点的偏移。 */
 function anchorDecorations(decorations, units) {
   if (!decorations.length || !units.length) return []
   return decorations.map((node) => {
@@ -1127,7 +1449,10 @@ function anchorDecorations(decorations, units) {
   })
 }
 
-/** 与控制台相同；额外返回让开的批注数，供摘要使用。 */
+/**
+ * 跟着锚点节点移动；落在节点上时沿交叉轴（竖排左右、横排上下）挪到最近的空位，
+ * 不挡主链，也不会被推过一整列节点。
+ */
 function placeDecorations(anchors, units, direction) {
   if (!anchors.length) return 0
   const horizontal = isHorizontalDir(direction)
@@ -1165,18 +1490,22 @@ function placeDecorations(anchors, units, direction) {
   return moved
 }
 
-/** 与控制台相同；stats 额外累计重算的分组数和让开的批注数。 */
+/**
+ * 按作用域递归布局：每个 group 先递归布局直接子节点，再作为代理参与父层 Dagre。
+ * 批注 / 文本跟随离它最近的节点，重叠时往外让开，再被 group 包围。
+ * 分组只改尺寸和子节点坐标，自身 position 不变。
+ * 折行预算只给外层：分组内部不折行、不拆排，避免组内折一次、外层再折一次拼成网格。
+ */
 function createScopeLayout(list, edgeList, direction, stats) {
   const hierarchy = createHierarchy(list)
   const visited = new Set()
 
-  function layoutScope(scopeId, budget) {
+  function layoutScope(scopeId, budget = null) {
     if (scopeId && visited.has(scopeId)) return
     if (scopeId) visited.add(scopeId)
     const children = hierarchy.childrenByParent.get(scopeId || null) || []
-    const innerBudget = groupWrapBudget(budget, direction)
     for (const child of children) {
-      if (child.type === 'group') layoutScope(child.id, innerBudget)
+      if (child.type === 'group') layoutScope(child.id)
     }
     const layoutable = children.filter(isLayoutableNode)
     const decorations = children.filter(node => !isLayoutableNode(node))
@@ -1196,6 +1525,7 @@ function createScopeLayout(list, edgeList, direction, stats) {
   return { hierarchy, layoutScope }
 }
 
+/** 用户主动自动布局：整张画布重新排布。 */
 function doApplyLayout(
   nodes,
   edges,
@@ -1245,6 +1575,7 @@ function groupDescendants(groupId, hierarchy) {
 /**
  * 只重新排列某个分组（含嵌套子分组）内的节点：分组左上角不动，尺寸按内容重算。
  * 分组外的节点不动；祖先分组装不下时只向右、向下放大，不缩小也不移动。
+ * 分组内部不折行，与整图自动布局时该分组的样子一致。
  */
 function doApplyGroupLayout(
   nodes,
@@ -1263,11 +1594,7 @@ function doApplyGroupLayout(
   if (!isGroupType(group)) return stats
 
   const ancestors = groupAncestors(groupId, hierarchy)
-  let budget = computeWrapBudget(list, direction)
-  for (let depth = 0; depth <= ancestors.length; depth++) {
-    budget = groupWrapBudget(budget, direction)
-  }
-  layoutScope(groupId, budget)
+  layoutScope(groupId)
 
   let child = group
   for (const parent of ancestors) {

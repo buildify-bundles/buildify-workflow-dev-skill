@@ -11,7 +11,7 @@ buildify --json bundle node-relations  -b official/core -n WebhookTriggerNode
 
 照抄骨架前替换这些占位：
 
-- `official/core`、节点名、`REPLACE_ME` 版本：换成 `bundle list` / `bundle nodes` **实际返回**的值。环境里根本没有能覆盖需求的包时，不要用骨架硬编，按 SKILL「环境里没有对应节点」先请用户在管理后台「开发中心 → 软件包」创建软件，再开发和发布，然后回来编排。
+- `official/core`、节点名、`REPLACE_ME` 版本：换成 `bundle list` / `bundle nodes` **实际返回**的值。环境里根本没有能覆盖需求的包时，不要用骨架硬编，按 [missing-bundle.md](missing-bundle.md) 给默认方案、确认后由 bundle-dev 建包开发发布，然后回来编排。
 - `icon: COPY_FROM_BUNDLE_NODES`：换成目录返回的 `icon`（如 `webhook.svg`）。
 - `trigger` / `work` / `reply` 这类 id：换成 `n-` + nanoid。
 - 骨架默认 `TB`；横排时改 `"direction": "LR"`。
@@ -54,7 +54,7 @@ buildify --json workflow validate -p "$PROJ" -f ./flow.json
     {
       "id": "work",
       "type": "default",
-      "position": { "x": 45, "y": 177 },
+      "position": { "x": 45, "y": 161 },
       "sourcePosition": "bottom",
       "targetPosition": "top",
       "data": {
@@ -72,7 +72,7 @@ buildify --json workflow validate -p "$PROJ" -f ./flow.json
     {
       "id": "reply",
       "type": "default",
-      "position": { "x": 45, "y": 330 },
+      "position": { "x": 45, "y": 298 },
       "sourcePosition": "bottom",
       "targetPosition": "top",
       "data": {
@@ -172,19 +172,19 @@ WHERE id = #{msg.output.id}
 
 成功/失败（或多出口）各自还要做同一件事、且接到**不同**下游时，**不要**把两边绕到同一个节点上交叉。每条支路复制一份相同配置的节点，沿主方向继续排；每条边的 `relations` 只含该支路的出口。
 
-排版脚本跑完的样子如下（手算兜底时也按这个写）。`TB` 竖排（判断在 y=24，下一层净空 120，兄弟净空 50；返回是出度 1，再走净空 90）：
+排版脚本跑完的样子如下（手算兜底时也按这个写）。`TB` 竖排（判断在 y=24，下一层净空 116，兄弟净空 50；返回是出度 1，再走净空 74）：
 
 ```
                  [判断]  x=194 y=24
                 /                    \
-   [处理A] x=45 y=207       [处理B] x=343 y=207
-   [返回]  x=45 y=360       [返回]  x=343 y=360     ← 同一 Webhook 响应配置，两个 id
+   [处理A] x=45 y=203       [处理B] x=343 y=203
+   [返回]  x=45 y=340       [返回]  x=343 y=340     ← 同一 Webhook 响应配置，两个 id
 ```
 
 `LR` 横排（判断在 x=45，下一列净空 140，兄弟净空 72）：
 
 ```
-[判断] x=45 y=92
+[判断] x=45 y=91.5
    |                    \
 [处理A] x=433 y=24    [处理B] x=433 y=159
 [返回]  x=821 y=24    [返回]  x=821 y=159     ← 同一配置，两个 id

@@ -1,6 +1,6 @@
 # buildify CLI
 
-包：`buildify-cli`，命令：`buildify`。`buildify help` 打印与本文件对应的 `usage.md`。流程子命令是 **`workflow`**，不是 `flow`。流程 id 的选项仍是 `--flow` / `-w`。
+包：`buildify-cli`，命令：`buildify`，本文对应 **1.2.0**（`buildify version` 查看）。`buildify help` 打印与本文件对应的 `usage.md`。流程子命令是 **`workflow`**，不是 `flow`。流程 id 的选项仍是 `--flow` / `-w`。
 
 ## 配置与工作区
 
@@ -23,7 +23,7 @@ buildify --json config profiles
 
 | reason | 做什么 |
 |---|---|
-| `missing_api_key` | 把 `data.userMessage` 原样给用户。问一个简短 profile 名，再用 stdin `add-profile`。 |
+| `missing_api_key` | 停下，按 [install.md](../install.md)「buildify-cli 密钥」的模板请用户创建并发来密钥，不要原样转发 `data.userMessage`（里面的菜单路径可能是旧的）。profile 名不必问，用工作区的简短英文名，没有就用 `default`，再用 stdin `add-profile`。 |
 | `profile_required` | 列出 `data.profiles`（name、tenantId、keyName，无密钥），问一次用哪个。之后每条命令加 `--profile <name>`。不要 `config use`，除非用户明确要改默认工作区。 |
 | `workspace_key_missing` | `.buildify-workspace` 指向的工作区本机没有密钥。向用户要**这个**工作区的密钥并 `add-profile`，不要改用别的工作区。 |
 
@@ -55,7 +55,7 @@ buildify --json config profiles
 | `health` | 探活，无需密钥 |
 | `key test` | 校验密钥并回显工作区（`tenantId` / `keyName`） |
 | `config profiles` | 已存 profile，无密钥 |
-| `bundle list [-k keyword]` | 可用 bundle。需求对应的包不在列表里就停下编排，请用户到管理后台「开发中心 → 软件包」创建软件，再开发并发布后回来（见 SKILL「环境里没有对应节点」） |
+| `bundle list [-k keyword]` | 可用 bundle。换几个同义词都查不到就停下编排，按 [missing-bundle.md](missing-bundle.md) 给默认方案、确认后交给 bundle-dev 建包开发发布再回来 |
 | `bundle nodes -b NAME [-V ver]` | 节点目录（已展平 `groups_json[].nodes` + `nodes_json`，含 `icon` / `label` / `isTrigger` / `bundleVersion`）。目录 `summary` 是类型通用简述，不要当画布文案 |
 | `bundle node-properties -b NAME -n NodeName` | 表单 schema → `data.parameters` 的合法键；同时带回 `icon` / `label` / `isTrigger` 和每个字段的 **`uiComponent`**（决定表达式语法） |
 | `bundle node-relations -b NAME -n NodeName` | 出口 relation 整份对象 → `edges[].data.relations[]` |
@@ -66,6 +66,9 @@ buildify --json config profiles
 | `project delete -p ID` | 删项目。项目里还有流程时 HTTP 409。先问用户 |
 | `project credentials -p ID [-b bundle]` | 可引用凭证元数据，无密钥 |
 | `project create-credential -p ID -b bundle --type TYPE` | 仅当用户选「现在创建」。缺 name/label/data 时 `--json` 退出 3，`data.reason=credential_input_required`，返回默认名称和表单字段；确认后用 stdin `--file -` 创建。响应无密钥。不要 `--data` 上 argv |
+| `project update-credential -p ID --credentials cred_… [--label 显示名] [--description 说明] [--bundle-version V] [--file -]` | 改凭证的显示名、说明、绑定的软件包版本或表单。至少传一项，没传的保持原值；`--description ''` 清空说明。表单用 stdin `--file -`，只合并传入的字段，空着或掩码的密钥字段保留原值。先问用户。`--json` 不弹确认；不要 `--data` 上 argv，不要回显密钥 |
+| `project delete-credential -p ID --credentials cred_…` | 软删除凭证。还有流程引用时 HTTP 409。先用 `credential-workflows` 告诉用户哪些流程在用，再确认 |
+| `project credential-workflows -p ID --credentials cred_… [--page 1] [--page-size 10]` | 分页列出引用这条凭证的流程，无密钥。权限同 `project credentials` |
 | `project workers -p ID [--online-only]` | 服务器（worker）列表，含 `workerName` / `remark` / 在线状态 / `externalHost` / `httpPort`。给用户看时写 **workerName — 描述 — 在线/离线**（`remark` 为空写「无描述」），不展示 hostname |
 | `workflow list / create` | 流程。`create --worker` 会同时绑定服务器 |
 | `workflow update -p ID -w WF -n "新名称" [--remark 简介]` | 改流程名。不传 `--remark` 就保留原简介。先问用户 |
@@ -138,6 +141,7 @@ wait
 - `unassign-workers` 对已发布流程只是开始下线。绑定还在时 `workflow delete` 返回 409「当前流程存在关联部署服务器」。
 - `project delete` 在项目还有流程时返回 409「项目存在流程,请先删除流程」。
 - 强制移除会立刻删掉绑定。普通移除能完成时不要用它。
+- `credentialsId` 从 `project credentials` 取，对用户只说凭证的显示名。`update-credential` 改表单会影响所有引用它的流程，改前用 `credential-workflows` 列出来告诉用户。`delete-credential` 返回 409 表示还有流程在用：先把这些流程的凭证换掉，或请用户决定不删。
 
 ## 部署记录与历史版本
 

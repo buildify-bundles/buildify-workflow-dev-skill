@@ -9,17 +9,20 @@ description: >-
   mentions 编排流程, 工作流, flow.json, 画布, Webhook 接口, HTTP 接口, 试跑,
   @test, 发布, 版本号, 凭证, 服务器, 节点管理, 批注, 节点分组, 横排, 竖排,
   连线标签, 多段, 独立接口, 入站认证, 访问地址, 飞书卡片, 失败告警, 缺少节点,
-  部署记录, 历史版本, 绑定服务器, 换服务器, 删除流程, 改名.
-  When no software package covers the need, asks the user to create it in the
-  admin console (开发中心 → 软件包) before developing and publishing with
-  buildify-bundle-dev, then resumes orchestration.
+  部署记录, 历史版本, 绑定服务器, 换服务器, 删除流程, 改名, 改凭证, 删除凭证,
+  凭证被哪些流程使用.
+  When no package or node covers the need, says so and proposes a default
+  plan (buildify-bundle-dev conventions plus the vendor's official API docs,
+  package name and icons); after one confirmation, or none when the user
+  already asked for it, has buildify-bundle-dev create the package, develop
+  and publish it, then resumes orchestration.
 ---
 
 # Buildify 流程编排
 
 用已安装的 Bundle 节点编排工作流：发现节点、写画布 JSON、校验、保存草稿、试跑，试跑通过后确认版本号再发布到已确认的服务器，并用表格汇报。
 
-- 和 `buildify-bundle-dev` 分工：那个「做节点」，这个「用节点编流程」。本 skill 的规则不用来写 Bundle 源码。没有软件包时，先请用户到管理后台「开发中心 → 软件包」创建软件，再交给 bundle-dev 开发和发布（没装先安装），发布后回来接着编排。包在、只是缺节点时直接在该包里开发。
+- 和 `buildify-bundle-dev` 分工：那个「做节点」，这个「用节点编流程」。本 skill 的规则不用来写 Bundle 源码。没有对应软件包或节点时，先说明不存在，给出按官方文档实现的默认方案，确认后交给 bundle-dev 建包、开发和发布（没装先安装），发布后回来接着编排。
 - 唯一接口是 `buildify` CLI（PyPI 包 `buildify-cli`），它调 `buildify-open-api-server`。不要猜 REST 路径，不清楚先 `buildify help`。
 - 机器可读输出一律加 `--json`，按退出码分支（见 [reference/cli.md](reference/cli.md)「退出码」）。
 
@@ -32,7 +35,7 @@ description: >-
 - [ ] 1. CLI 就绪：buildify --json key test（见「工作区与密钥」）
 - [ ] 2. 定项目、流程（见「沿用已有，只问缺的」）
 - [ ] 3. 定服务器：改已有先 workflow workers（只要 deleteStatus 0）；画布方向默认 TB，试跑通过后默认发布
-- [ ] 4. 发现节点：bundle list → bundle nodes → 只对要放进画布的节点拉 node-properties / node-relations；没有软件包 → 请用户在管理后台「开发中心 → 软件包」创建软件，再开发发布后回到这一步；包在但缺节点 → 在该包里开发后回到这一步
+- [ ] 4. 发现节点：bundle list → bundle nodes → 只对要放进画布的节点拉 node-properties / node-relations；没有软件包或缺节点 → 默认方案确认一次，bundle-dev 建包、开发、发布后回到这一步（见「环境里没有对应节点」）
 - [ ] 5. 凭证：只问空槽，三选一
 - [ ] 6. 生成 flow.json：先写节点和连线，再 node scripts/layout.mjs 统一排版（见「生成画布 JSON」）
 - [ ] 7. node scripts/check.mjs --fetch 查边、出口和图标；再 workflow validate 闭环，ERROR 按节点写回顶层 errors
@@ -44,7 +47,7 @@ description: >-
 步骤补充：
 
 - **2–5 缺什么才问什么**，同一次提问里问完。缺口没回复前不要 `workflow create` / `save-draft` / `test-run` / `deploy`。
-- **4**：没有对应软件包时停下，请用户到管理后台「开发中心 → 软件包」创建软件，确认后再开发发布，然后从这一步继续。包在但缺节点时不必新建软件包，直接开发该节点。`bundle doc` 只在参数含义不清时读。
+- **4**：没有对应软件包或节点时停下编排，按「环境里没有对应节点」给方案、确认、开发发布，然后从这一步继续。`bundle doc` 只在参数含义不清时读。
 - **8**：改已有就打开该草稿再 save-draft。新建用用户给的名称，没给就用展示过的建议名。
 - **9**：凭证选了「使用时再选」则停在草稿，不试跑。用户选了「只保存草稿」可以试跑，但不进入步骤 10。
 - **10**：只在试跑通过、且用户没选「只保存草稿」时进行。见「发布与汇报」。
@@ -53,13 +56,13 @@ description: >-
 
 | 场景 | 读 |
 |---|---|
-| 命令、参数、退出码、推荐循环、save-draft 冲突、改服务器、删除、部署记录、历史版本 | [reference/cli.md](reference/cli.md) |
+| 命令、参数、退出码、推荐循环、save-draft 冲突、改服务器、改/删凭证、删除、部署记录、历史版本 | [reference/cli.md](reference/cli.md) |
 | 画布 JSON 字段、排版脚本、边、批注、分组、多段并列、校验顺序 | [reference/flow-json.md](reference/flow-json.md) |
 | 参数里的表达式（按 `uiComponent`）、JS 代码注释、飞书卡片与失败原因 | [reference/expressions.md](reference/expressions.md) |
 | 批注节点字段、HTTP 接口批注正文 | [reference/comment-node.md](reference/comment-node.md) |
 | 常见骨架：Webhook 应答、定时落库、分支复制、改已有、分组 | [reference/recipes.md](reference/recipes.md)（节点名仍须用 CLI 核实） |
 | 保存 / 试跑 / 发布后的汇报表格与状态符号 | [reference/report.md](reference/report.md) |
-| 没有软件包，要先在管理后台创建再开发 | 本文「环境里没有对应节点」，安装说明 <https://buildify.cn/buildify-bundle-dev/install.md> |
+| 没有软件包或缺节点：默认方案、确认模板、建包、开发发布后回来 | [reference/missing-bundle.md](reference/missing-bundle.md) |
 
 ## 生成画布 JSON（步骤 6）
 
@@ -134,86 +137,14 @@ node <本 skill 目录>/scripts/check.mjs ./flow.json --fetch --fix    # 能确�
 
 ## 环境里没有对应节点：先做 Bundle，再回来编排
 
-步骤 4 必须用 CLI 核实，**禁止**按名称或 recipes 臆造 `bundleName` / 节点 `name`。
+步骤 4 必须用 CLI 核实，**禁止**按名称或 recipes 臆造 `bundleName` / 节点 `name`。`bundle list -k` 换两三个同义词都查不到是**缺软件包**；包在但 `bundle nodes` 里没有是**缺节点**。缺节点时先看同包有没有 `…ApiCall` 通用调用节点，有就按厂商官方文档填参数直接用。
 
-判定「没有」：
+确实没有时**立刻停止**编 JSON / validate / 试跑 / 发布，按 [reference/missing-bundle.md](reference/missing-bundle.md) 走：
 
-- `bundle list`（可加 `-k` 关键词，换两三个同义词再查）里没有能覆盖需求的软件包；或
-- 包在，但 `bundle nodes` 展平结果里没有要用的节点类型。
-
-**包在、只是缺某个接口的专用节点时**，先看同包有没有通用调用节点（类名以 `ApiCall` 结尾，或 `bundle doc` 里有「通用调用」）。有就用它，按厂商文档和 `bundle doc` 填 `method` / `path` / `query` / `headers` / `body`，这不算臆造。
-
-确实没有时**立刻停止**编 JSON / validate / 试跑 / 发布，按下面四步走。用户点选之前不装 skill、不写 Bundle 代码。
-
-**没有软件包时，先让用户在管理后台创建软件。** `bundle list` 里没有能覆盖需求的软件包时，开发和发布之前先提示他到管理后台「开发中心 → 软件包」创建软件。他确认已经创建、并给出软件包名称之前，不安装 bundle-dev、不写代码、不发布。包已经在、只是缺节点时，不必再创建软件包。
-
-### 1. 查 buildify-bundle-dev 是否已装
-
-按顺序找，找到一个就算已装，记下它的 `SKILL.md` 路径：
-
-1. 本会话的技能列表里有 `buildify-bundle-dev`。
-2. 本 skill 的同级目录：`test -f "<本 skill 目录>/../buildify-bundle-dev/SKILL.md"`。
-3. 当前客户端的个人 skills 目录和当前仓库的 skills 目录（如 `~/.cursor/skills/`、`.cursor/skills/`、`~/.claude/skills/`）下的 `buildify-bundle-dev/SKILL.md`。
-
-### 2. 说明缺口，一次点选
-
-没有软件包时用这个：
-
-```markdown
-## 缺少软件包
-
-当前工作区没有能实现「同步订单」的软件包。`bundle list` 中未见相关软件包。
-
-请先到管理后台「开发中心 → 软件包」创建软件。创建完成后再开发和发布，发布后继续编排。
-
-### 相近能力
-
-| 节点 | 说明 |
-| --- | --- |
-| 真实节点名 | 一句话 |
-
-### 下一步
-
-1. 我已在「开发中心 → 软件包」创建软件，继续开发和发布（推荐）
-2. 改用「真实节点名」
-3. 先停下
-```
-
-- 已安装时第 1 项写「我已在「开发中心 → 软件包」创建软件，用 buildify-bundle-dev 开发并发布，再继续编排（推荐）」。
-- 未安装时第 1 项写「我已在「开发中心 → 软件包」创建软件，安装 buildify-bundle-dev 后开发并发布，再继续编排（推荐）」。
-- 选第 1 项时带上刚创建的软件包名称。没写就再问一次名称，拿到之前不要开发。开发、`bundle.json` 和发布都用这个名称，不要另起一个。
-- 没有相近能力就不出「相近能力」表和对应选项；有多个相近节点时每个一项。
-- 选「改用」就回到步骤 4 用那个节点；选「先停下」就结束，不保存草稿。
-
-包已经在、只缺节点时用这个，不必请他新建软件包：
-
-```markdown
-## 缺少节点
-
-软件包「真实包名」里没有实现「同步订单」的节点。`bundle nodes` 中未见该节点。
-
-### 下一步
-
-1. 在「真实包名」里开发这个节点并发布，然后继续编排（推荐）
-2. 改用「真实节点名」
-3. 先停下
-```
-
-未安装时，把第 1 项改成「安装 buildify-bundle-dev，在「真实包名」里开发这个节点并发布，然后继续编排（推荐）」。相近能力的写法与上面相同。
-
-### 3. 安装（未安装且用户选了继续开发）
-
-读 <https://buildify.cn/buildify-bundle-dev/install.md>（`curl -sSL` 或网页抓取工具取正文）并照它执行：定 skills 根目录、clone 或更新、校验。用户已经点了安装，不要再问是否安装；install.md 判断目录不确定时会让你问一次，照做。
-
-装完不必新开对话，直接读 `$SKILL_DIR/SKILL.md` 继续。安装失败就贴出命令输出并停下，不要手抄文件，也不要换别的目录硬装。
-
-### 4. 开发、发布，再回来编排
-
-1. **先记下编排现场。** 在进度清单下补一段「编排待续」：需求一句话；已确认的项目、流程名、服务器、凭证、方向；缺的节点要做什么（入参、出参、出口、是否触发器、要不要凭证）。
-2. **按 bundle-dev 开发。** 读它的 `SKILL.md`，按它的清单做骨架、表单、实现、校验、打包、发布。没有软件包的这条路径，`bundleName` 用用户在「开发中心 → 软件包」里创建的名称。代码放哪、版本号、发布凭证以 bundle-dev 为准，本 skill 的画布规则不用在 Bundle 代码上。它要求用户确认的事照常问。
-3. **发布成功后回到步骤 4。** `buildify --json bundle list -k <关键词>` 确认新包可见，再 `bundle nodes` / `node-properties` / `node-relations` 取真实的 `bundleVersion`、`icon`、表单和 relations。不要用 Bundle 源码里的值代替 CLI 返回。
-4. **看不到新包时不要编 JSON。** 告诉用户已发布的 `bundleName` 和版本，请他到控制台确认这个包对当前工作区可用，确认后再重查。
-5. **接着编排。** 「编排待续」里已确认的项不再问；新节点有凭证槽时照「凭证」三选一，然后照常走步骤 5–10。发布汇报里加「新增 Bundle」一节（见 [reference/report.md](reference/report.md)）。
+1. **说明不存在，拟默认方案。** 节点、凭证、`…ApiCall` 通用节点按 buildify-bundle-dev 规范；接口按对接服务的官方开放文档实现并附链接（只认官方域名，找不到就请用户给文档）。缺软件包时一并拟好软件包信息（`命名空间/包名`、显示名、简介、可见性 `internal`）和图标（默认 `default.svg`）。
+2. **确认一次。** 用户已明确要求直接开发（如「没有就直接做」「按官方文档做」，或已给出包名和节点要求）时不再问，按默认值开发并在回复里列出默认值。否则一次点选：按默认方案创建并开发（推荐）/ 调整 / 改用相近节点 / 先停下，图标作第二题。**不要**让用户去控制台建软件包，建包由 bundle-dev 的发布 CLI 完成。
+3. **交给 bundle-dev。** 没装或版本旧（不支持 `bundle create`）就先装 / 更新。在「编排待续」里写明软件包信息和图标已由用户确认，bundle-dev 据此建命名空间和包、传图标、开发、发布，不再重复确认。
+4. **回到步骤 4。** 用 CLI 重新查目录，取真实的 `bundleVersion` / `icon` / 表单 / relations 后继续编排，汇报里加「新增 Bundle」。
 
 ## 项目 / 流程 / 服务器 / 凭证：沿用已有，只问缺的
 
@@ -267,7 +198,7 @@ node <本 skill 目录>/scripts/check.mjs ./flow.json --fetch --fix    # 能确�
 - 新建名没给时，按需求起一个短名（如「当前时间 API」）放进流程题第一项并标「推荐」。不要另起一轮只问名字，也不要用没展示过的名字直接 create。
 - 服务器：`workflow create --worker`、`test-run --worker`、`deploy --worker` 用同一台。离线的不能试跑或发布；用户点了离线的要说明并请改选在线的。
 - 改已有先 `workflow workers`。`deleteStatus` 0 是已绑定，才能 `deploy`；1 是待移除，不能拿来试跑或发布。只有一台已绑定且在线时直接用，多台再问。一台都没有时从 `project workers` 里选，用户点了之后先 `assign-workers`，再发布。`deploy` 报「未绑定」就是还没做这一步。
-- 改名、加/换/移除服务器、删除项目或流程都不是默认步骤。用户提出来才做，先点选确认。细则见「改名称、改服务器、删除」。
+- 改名、加/换/移除服务器、改或删凭证、删除项目或流程都不是默认步骤。用户提出来才做，先点选确认。细则见「改名称、改服务器、改凭证、删除」。
 - Webhook 路径等节点参数按表单写进 JSON，校验 ERROR 再按节点汇总一次问，不要为每个字段单独打断一轮。
 
 ### 凭证
@@ -419,21 +350,24 @@ buildify --json workflow deploy -p "$PROJ" -w "$WF" --worker "$WKR" \
   --version-name "v20261005-184620" --remark "首次上线 /test2 当前时间接口" --wait
 ```
 
-`--version-name` 和 `--remark` 只写到这个发布版本，不改流程描述。`--wait` 在 CLI 内轮询到结束，**不要**再循环调 `workflow deployment`，也不要接着拉 `workflow deployments`。返回的 `versionName` / `publishRemark` / `summary` 直接用来画表；失败时退出码 4，把 `summary.servers[].message` 原样告诉用户。`--worker` 必须已经是 `deleteStatus` 0 的绑定；报「未绑定」就先按「改名称、改服务器、删除」加上再发。
+`--version-name` 和 `--remark` 只写到这个发布版本，不改流程描述。`--wait` 在 CLI 内轮询到结束，**不要**再循环调 `workflow deployment`，也不要接着拉 `workflow deployments`。返回的 `versionName` / `publishRemark` / `summary` 直接用来画表；失败时退出码 4，把 `summary.servers[].message` 原样告诉用户。`--worker` 必须已经是 `deleteStatus` 0 的绑定；报「未绑定」就先按「改名称、改服务器、改凭证、删除」加上再发。
 
 ### 汇报
 
 保存草稿、试跑、发布后都用 Markdown 表汇报，模板、状态符号映射和禁写项见 [reference/report.md](reference/report.md)。要点：服务器用表不用列表；表格单元格不放彩色 emoji；只写名称不写 id；不输出节点信息（HTTP 访问地址除外）。用户事后问部署记录或历史版本时，用同一份状态符号，见 report.md「事后查询」。
 
-## 改名称、改服务器、删除
+## 改名称、改服务器、改凭证、删除
 
-这些命令会改运行位置或删数据。用户没提出来就不要跑。能点选就点选，确认前不要执行。命令和 409 含义见 [reference/cli.md](reference/cli.md)。
+这些命令会改运行位置、凭证或删数据。用户没提出来就不要跑。能点选就点选，确认前不要执行。命令和 409 含义见 [reference/cli.md](reference/cli.md)。
 
 - **改名**：`project update` / `workflow update` 必传 `-n`。用户没说要改简介就不传 `--remark`，原简介会留下。
 - **加服务器**：`workflow assign-workers`，多台就重复 `--worker`。已经绑定的会跳过。流程还没发布时只是绑上，`needDeploy` 为 false。已经发布过时，会把**当前线上版本**部署到新服务器（`needDeploy: true`，带 `deploymentId`），不是把草稿发出去。告诉用户这一点。不要自己轮询；用户要看这次结果时再调一次 `workflow deployment -d`。响应里有 `warnings` 就原样说明。正在移除的服务器会 409，把 `msg` 告诉用户，等移除完成或改走强制移除。
 - **移除服务器**：`workflow unassign-workers`。没发布过的立刻解绑。已发布的变成待移除并下线，绑定还在，服务器确认前 `workflow delete` 会 409。
 - **强制移除**：只在用户说明服务器已经不在，或普通移除一直停在待移除时才用 `workflow force-unassign-workers`。它立刻删掉绑定，离线服务器下次同步时丢掉这个流程。
 - **删除**：`project delete` 只在项目里没有流程时能成功，否则 409。`workflow delete` 只在没有任何绑定（含待移除）时能成功，否则 409。要删流程就先移除服务器，待移除消不掉时再问要不要强制移除，然后才能删。
+- **改凭证**：`project update-credential -p … --credentials cred_…`，`credentialsId` 从 `project credentials` 取。只传用户要改的项（`--label` / `--description` / `--bundle-version`）；改表单时只把要改的字段用 stdin `--file -` 传，没传或空着的密钥保留原值。改表单会影响所有用它的流程，确认前先 `project credential-workflows` 把这些流程列给用户。密钥不要回显。
+- **删凭证**：先 `project credential-workflows` 看谁在用。有流程在用时删除会 409：告诉用户是哪些流程，问是先给它们换凭证还是不删，不要自己改那些流程。没人用时确认后 `project delete-credential`。
+- **凭证被哪些流程使用**：只读，直接 `project credential-workflows`，按流程名列表汇报，`hasNext` 为真且用户还要看时再翻页。
 
 ## 部署记录与历史版本
 
