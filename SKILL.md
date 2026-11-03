@@ -92,8 +92,8 @@ description: >-
 - **边**：每两个节点之间只有一条边，`id` 固定 `{source}_{target}`，不要按出口拆成 `…_Success` / `…_Failure` 两条。接到同一下游的多个出口（如 Success+Failure）全部放进这条边的 `data.relations[]` 数组。每个 relation 必须有 `name` 和 `label`，从 `node-relations` 整份拷贝；`description` 可选，可以照目录写，也可以改写成本流程里的含义（如「查不到也继续」）。MCP 自定义关系再带 `_id` / `icon` / `mcpKind`，并同步到源节点 `data.relations`。
 - **表达式**按字段 `uiComponent` 选语法：`JsonExpressionInput` 默认整字段 `"={{msg.xxx}}"` 保留类型，要拼字符串才写 `"=前缀 {{msg.xxx}}"`（`=` 必须是第一个字符，`{{ }}` 里不运算）；`SqlEditor` 用 `#{}` / `${}`；文本及其他用 `{{ }}`。见 [expressions.md](reference/expressions.md)。
 - **JS 节点** `parameters.code` 分段并写中文注释：顶部写入参/出参，每段用 `// --- 段名 ---` 隔开。
-- **批注默认不加。** 例外：每个 HTTP 接口一张（只写接口说明和访问地址）；用户要求；分支条件或调用约定在 `summary` 里写不下、不写会误用。不连线、不写 `parentNode`。初始坐标写在被说明节点的外侧（`TB` 左侧、`LR` 上方），排版脚本会让它跟着最近的节点走，并把整张画布挪进可视区。
-- **分组默认不加。** 多于两段互不连线的逻辑（三段起）时每段一个框，或用户要求时才加。组内节点必须写 `parentNode`；框的宽高和组内坐标交给脚本（标题在框内，左右留白 40，上留白 68，有回连时自动加宽）；框背景写 `groupColor: "#5b7c99"`、`groupOpacity: 0.06`。
+- **批注默认不加。** 例外：每个 HTTP 接口一张（正文见 comment-node.md 的接口说明）；用户要求；分支条件或调用约定在 `summary` 里写不下、不写会误用。不连线。HTTP 接口说明写 `parentNode` 挂到该段分组，初始坐标 `{0, 0}`，脚本把它放在组内靠左；这段还没有分组时先加一个框。其他批注不写 `parentNode`，初始坐标在被说明节点外侧（`TB` 左侧、`LR` 上方）。
+- **分组默认不加。** 多于两段互不连线的逻辑（三段起）时每段一个框，有 HTTP 接口的段也加一个框（接口说明放在框内靠左），或用户要求时才加。组内节点必须写 `parentNode`；框的宽高和组内坐标交给脚本（标题在框内，左右留白 40，上留白 68，有回连时自动加宽）；框背景写 `groupColor: "#5b7c99"`、`groupOpacity: 0.06`。
 - **两段及以上互不连线**时按下一节生成。
 
 ### 保存前检查边和图标
@@ -133,7 +133,7 @@ node <本 skill 目录>/scripts/check.mjs ./flow.json --fetch --fix    # 能确�
 - 不写顶层 `direction` / `errors` / `viewport`，不加批注和分组框
 - 不调用 save-draft / test-run / deploy，不改选项目或凭证
 
-**只有主代理写 `flow.json`。** 合并时：拼上各段 `nodes` / `edges`，检查 id 不重复、边不跨段；顶层只写一份 `direction` 和 `errors`。按需求顺序给第 i 段（从 0 起）的每个顶层节点写同一个粗略坐标（`TB` 为 `{x: i*1000, y: 0}`，`LR` 为 `{x: 0, y: i*1000}`），脚本靠它决定段的先后，也靠它把批注贴到正确的段。再由主代理加分组（多于两段时）和每个 HTTP 接口的批注，跑一次排版脚本，然后照常做步骤 7–10。段内层距、段间隙由脚本处理，不要手动平移。
+**只有主代理写 `flow.json`。** 合并时：拼上各段 `nodes` / `edges`，检查 id 不重复、边不跨段；顶层只写一份 `direction` 和 `errors`。按需求顺序给第 i 段（从 0 起）的每个顶层节点写同一个粗略坐标（`TB` 为 `{x: i*1000, y: 0}`，`LR` 为 `{x: 0, y: i*1000}`），脚本靠它决定段的先后，也靠它把批注贴到正确的段。再由主代理加分组（多于两段时；有 HTTP 接口的段即使不到三段也要有框）和每个 HTTP 接口的批注（`parentNode` 指向该段的框），跑一次排版脚本，然后照常做步骤 7–10。段内层距、段间隙由脚本处理，不要手动平移。
 
 ## 环境里没有对应节点：先做 Bundle，再回来编排
 
@@ -277,7 +277,7 @@ WARNING 不影响退出码，但也要修：`data.icon` 缺失、边上 `relatio
 
 按 IP 限制访问写触发器高级选项 `options.acl`，不要再单做一段 IP 判断。开了认证后凭证槽仍按「凭证」三选一，不要自己挑一条。表单里没有 `authType` 时，才在触发器下游加一个真实存在的校验节点；没有能校验的节点就按「环境里没有对应节点」处理。不要把不存在的 `authType` 写进参数。
 
-**每个接口一张批注**，不进分组，正文只写接口说明和访问地址（见 [comment-node.md](reference/comment-node.md)）。访问地址：生产 `http://{externalHost}:{httpPort}{path}`，测试在 path 前加 `/@test`。`externalHost` / `httpPort` 取已确认服务器在 `project workers` 里的字段；缺了就只写方法和 `parameters.path`，注明完整地址是「服务器访问地址 + 路径」，并提示到控制台「节点管理」设置。不要编造域名。
+**每个接口一张批注**，挂在该接口的分组里靠左（见 [comment-node.md](reference/comment-node.md)）。这段还没有分组时先加一个框，执行节点和批注都写它的 `parentNode`，框标题用接口短名。正文按该文件的接口说明写：方法、路径、是否认证、有则写请求头 / 参数 / 示例 / 错误码，最后写访问地址。访问地址：生产 `http://{externalHost}:{httpPort}{path}`，测试在 path 前加 `/@test`。`externalHost` / `httpPort` 取已确认服务器在 `project workers` 里的字段；缺了就只写方法和 `parameters.path`，注明完整地址是「服务器访问地址 + 路径」，并提示到控制台「节点管理」设置。不要编造域名，不要把凭证密钥写进批注。
 
 ### 试跑 HTTP 接口
 

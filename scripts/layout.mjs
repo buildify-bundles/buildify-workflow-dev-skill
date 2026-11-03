@@ -1490,9 +1490,32 @@ function placeDecorations(anchors, units, direction) {
   return moved
 }
 
+/** 组内批注靠左：顶边与组内节点对齐，分组包络再把留白算进去。 */
+function placeGroupCommentsLeft(decorations, units) {
+  if (!decorations.length || !units.length) return 0
+  let minX = Infinity
+  let minY = Infinity
+  for (const unit of units) {
+    const rect = nodeRect(unit)
+    if (rect.x < minX) minX = rect.x
+    if (rect.y < minY) minY = rect.y
+  }
+  let cursorY = minY
+  let moved = 0
+  for (const node of decorations) {
+    const size = getNodeSize(node, nodeSizeFallback(node))
+    const x = minX - DECORATION_GAP - size.w
+    const y = cursorY
+    if ((node.position?.x ?? 0) !== x || (node.position?.y ?? 0) !== y) moved += 1
+    node.position = { x, y }
+    cursorY += size.h + DECORATION_GAP
+  }
+  return moved
+}
+
 /**
  * 按作用域递归布局：每个 group 先递归布局直接子节点，再作为代理参与父层 Dagre。
- * 批注 / 文本跟随离它最近的节点，重叠时往外让开，再被 group 包围。
+ * 组内批注靠左贴在节点旁边，再被 group 包围。组外批注跟随离它最近的节点，重叠时往外让开。
  * 分组只改尺寸和子节点坐标，自身 position 不变。
  * 折行预算只给外层：分组内部不折行、不拆排，避免组内折一次、外层再折一次拼成网格。
  */
@@ -1509,9 +1532,11 @@ function createScopeLayout(list, edgeList, direction, stats) {
     }
     const layoutable = children.filter(isLayoutableNode)
     const decorations = children.filter(node => !isLayoutableNode(node))
-    const anchors = anchorDecorations(decorations, layoutable)
+    const anchors = scopeId ? [] : anchorDecorations(decorations, layoutable)
     layoutDirectChildren(scopeId, children, edgeList, direction, hierarchy, budget)
-    stats.decorations += placeDecorations(anchors, layoutable, direction)
+    stats.decorations += scopeId
+      ? placeGroupCommentsLeft(decorations, layoutable)
+      : placeDecorations(anchors, layoutable, direction)
     if (scopeId) {
       const group = hierarchy.byId.get(scopeId)
       if (group) {
