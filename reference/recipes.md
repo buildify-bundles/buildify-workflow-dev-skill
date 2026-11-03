@@ -16,6 +16,7 @@ buildify --json bundle node-relations  -b official/core -n WebhookTriggerNode
 - `trigger` / `work` / `reply` 这类 id：换成 `n-` + nanoid。
 - 骨架默认 `TB`；横排时改 `"direction": "LR"`。
 - 骨架里的 `position` / `sourcePosition` / `targetPosition` 只是示例值，以排版脚本的输出为准。
+- 骨架省略了默认的分组和组内说明。写入画布时仍按 SKILL：每个功能一个分组，组内一张说明。
 
 **先连线，最后统一排版**：写好节点和边（坐标可以不写），再跑一次脚本，然后进入校验：
 
@@ -213,9 +214,9 @@ buildify --json workflow save-draft -p "$PROJ" -w "$WF" -f ./flow.json
 
 ## 5. 节点分组
 
-多于两段互不连线的独立逻辑、有 HTTP 接口的段（接口说明要进框靠左），或用户要求分组时才加。只写分组框的基础字段和组内节点的 `parentNode`，框的位置、宽高（标题在框内，左右留白 40，上留白 68，组内回连自动加宽）和组内坐标交给排版脚本。字段形状见 [flow-json.md](flow-json.md)「节点分组」，不要在这里另抄一份。
+每个功能默认一个分组，组内一张说明。一个功能 = 从一个触发器出发、彼此有边相连的一段；一段里的分支不要再加框。只写分组框的基础字段、组内节点和说明的 `parentNode`，框的位置、宽高和组内坐标交给排版脚本。说明的正文见 [comment-node.md](comment-node.md)。字段形状见 [flow-json.md](flow-json.md)「节点分组」，不要在这里另抄一份。
 
-三段各一个框时，第 i 段的框写粗略原点 `TB` `{x: i*1000, y: 0}`（`LR` `{x: 0, y: i*1000}`），子节点不写坐标，跑完脚本即可：
+多段时，第 i 段的框写粗略原点 `TB` `{x: i*1000, y: 0}`（`LR` `{x: 0, y: i*1000}`），子节点和组内说明不写坐标（说明可写 `{0, 0}`），跑完脚本即可：
 
 ```json
 { "id": "n-Gq3aT9xK", "type": "group", "position": { "x": 1000, "y": 0 },

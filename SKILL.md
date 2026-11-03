@@ -60,7 +60,7 @@ description: >-
 | 命令、参数、退出码、推荐循环、save-draft 冲突、改服务器、改/删凭证、删除、部署记录、历史版本 | [reference/cli.md](reference/cli.md) |
 | 画布 JSON 字段、排版脚本、边、批注、分组、多段并列、校验顺序 | [reference/flow-json.md](reference/flow-json.md) |
 | 参数里的表达式（按 `uiComponent`）、JS 代码注释、飞书卡片与失败原因 | [reference/expressions.md](reference/expressions.md) |
-| 批注节点字段、HTTP 接口批注正文 | [reference/comment-node.md](reference/comment-node.md) |
+| 批注节点字段、组内功能说明、HTTP 接口批注正文 | [reference/comment-node.md](reference/comment-node.md) |
 | 常见骨架：Webhook 应答、定时落库、分支复制、改已有、分组 | [reference/recipes.md](reference/recipes.md)（节点名仍须用 CLI 核实） |
 | 保存 / 试跑 / 发布后的汇报表格与状态符号 | [reference/report.md](reference/report.md) |
 | 没有软件包或缺节点：默认方案、确认模板、建包、开发发布后回来 | [reference/missing-bundle.md](reference/missing-bundle.md) |
@@ -87,14 +87,14 @@ description: >-
 - **节点 id**：每个新节点（含批注、分组框、复制出来的节点）用 `n-` + 8 位 nanoid，流程内唯一。不要用 `n1` / `trigger` 这类可读名。已有草稿的旧 id 不要改。边 `id` = `{source}_{target}`。
 - **顶层**：必写 `direction`（默认 `TB`；用户要横排才 `LR`；改已有沿用草稿）和 `errors`（先 `{}`）。
 - **节点字段**：`name` / `bundleName` / `bundleVersion` / `icon` / `label` / `isTrigger` 从 `bundle nodes` / `node-properties` 原样拷贝。**图标按节点类型逐个查目录**，不要凭名字猜（`JsFunctionNode` 是 `js.svg`，不是 `code.svg`；`HttpRequestNode` 是 `request.svg`），不要借用别的节点或软件包本身的图标，也不要写 URL。`summary` 写这颗节点在本流程里的职责，**≤8 字**（如「接收请求」「查询设备」），画布默认显示它，不要照抄目录 `summary`。
-- **坐标**：交给排版脚本。`position`、`sourcePosition` / `targetPosition`、分组框 `style` 宽高都由脚本写，不要在脚本输出后再手动挪动。只有批注和多段时要给粗略的初始坐标，见 flow-json.md「画布排列」。
+- **坐标**：交给排版脚本。`position`、`sourcePosition` / `targetPosition`、分组框 `style` 宽高都由脚本写，不要在脚本输出后再手动挪动。组内说明写 `{0, 0}`，多段时分组框写本段粗略原点；用户另要的组外批注写在外侧。见 flow-json.md「画布排列」。
 - **分支**：以不交叉为准。能沿流向干净汇合才共用下游；否则各支路复制一份配置相同的节点（新 id）。不要复制触发器。
 - **循环允许，但必须有出口。** 用户要重试、轮询、等到条件满足时，从下游出口连回上游入口即可。不要为了消环拆边或复制节点。回连由控制台绕线，节点仍按主链排，不要把下游再挪到上游旁边。环上至少要有一条边离开循环（If / Switch 的另一支、失败出口、次数用尽、超时等）。所有出口都连回环内就是死循环：补上退出条件再保存，条件不清楚就问用户。
 - **边**：每两个节点之间只有一条边，`id` 固定 `{source}_{target}`，不要按出口拆成 `…_Success` / `…_Failure` 两条。接到同一下游的多个出口（如 Success+Failure）全部放进这条边的 `data.relations[]` 数组。每个 relation 必须有 `name` 和 `label`，从 `node-relations` 整份拷贝；`description` 可选，可以照目录写，也可以改写成本流程里的含义（如「查不到也继续」）。MCP 自定义关系再带 `_id` / `icon` / `mcpKind`，并同步到源节点 `data.relations`。
 - **表达式**按字段 `uiComponent` 选语法：`JsonExpressionInput` 默认整字段 `"={{msg.xxx}}"` 保留类型，要拼字符串才写 `"=前缀 {{msg.xxx}}"`（`=` 必须是第一个字符，`{{ }}` 里不运算）；`SqlEditor` 用 `#{}` / `${}`；文本及其他用 `{{ }}`。见 [expressions.md](reference/expressions.md)。
 - **JS 节点** `parameters.code` 分段并写中文注释：顶部写入参/出参，每段用 `// --- 段名 ---` 隔开。
-- **批注默认不加。** 例外：每个 HTTP 接口一张（正文见 comment-node.md 的接口说明）；用户要求；分支条件或调用约定在 `summary` 里写不下、不写会误用。不连线。HTTP 接口说明写 `parentNode` 挂到该段分组，初始坐标 `{0, 0}`，脚本把它放在组内靠左，高度铺满组内节点列。正文不要写和分组标题相同的标题。这段还没有分组时先加一个框。其他批注不写 `parentNode`，初始坐标在被说明节点外侧（`TB` 左侧、`LR` 上方）。
-- **分组默认不加。** 多于两段互不连线的逻辑（三段起）时每段一个框，有 HTTP 接口的段也加一个框（接口说明放在框内靠左），或用户要求时才加。组内节点必须写 `parentNode`；框的宽高和组内坐标交给脚本（标题在框内，左右留白 40，上留白 68，有回连时自动加宽）；框背景写 `groupColor: "#4a535c"`、`groupOpacity: 0.03`、`groupBorderColor: "#4a535c"`、`groupBorderStyle: "solid"`、`groupBorderWidth: 1.5`、`groupRadius: 12`。`groupLabel` 用这段的短名，不要固定写成某一个词。
+- **每个功能默认一个分组。** 一个功能 = 从一个触发器出发、彼此有边相连的一段。新建、重写或这次新增的功能都加，一段一个框，不论有没有 HTTP、不论一共几段。一段里的成功/失败分支仍算这一个功能，不要为分支再加框，也不要每个节点一个框。用户明确不要分组时才省略。只改参数、不改结构时，不要为了补分组去重排已有画布。组内节点必须写 `parentNode`；框的宽高和组内坐标交给脚本（标题在框内，左右留白 40，上留白 68，有回连时自动加宽）；框背景写 `groupColor: "#4a535c"`、`groupOpacity: 0.03`、`groupBorderColor: "#4a535c"`、`groupBorderStyle: "solid"`、`groupBorderWidth: 1.5`、`groupRadius: 12`。`groupLabel` 用这个功能的短名，不要固定写成某一个词。
+- **每个分组内默认一张说明。** 说明是不连线的批注，`parentNode` 指向该框，初始坐标 `{0, 0}`。HTTP 接口宽 `480`，正文用 comment-node.md 的接口说明，这张就是该功能的说明，不要再加第二张。其他功能宽 `320`，从「功能说明」起笔，写清入口、做什么、结果落到哪里；有失败告警或退出条件时用短列表补上。正文不要写和分组标题相同的标题。脚本把说明放在组内靠左，高度铺满组内节点列。除此之外不加批注。用户另要说明某一颗节点时，那张不写 `parentNode`，初始坐标在被说明节点外侧（`TB` 左侧、`LR` 上方）。
 - **两段及以上互不连线**时按下一节生成。
 
 ### 保存前检查边和图标
@@ -134,7 +134,7 @@ node <本 skill 目录>/scripts/check.mjs ./flow.json --fetch --fix    # 能确�
 - 不写顶层 `direction` / `errors` / `viewport`，不加批注和分组框
 - 不调用 save-draft / test-run / deploy，不改选项目或凭证
 
-**只有主代理写 `flow.json`。** 合并时：拼上各段 `nodes` / `edges`，检查 id 不重复、边不跨段；顶层只写一份 `direction` 和 `errors`。按需求顺序给第 i 段（从 0 起）的每个顶层节点写同一个粗略坐标（`TB` 为 `{x: i*1000, y: 0}`，`LR` 为 `{x: 0, y: i*1000}`），脚本靠它决定段的先后，也靠它把批注贴到正确的段。再由主代理加分组（多于两段时；有 HTTP 接口的段即使不到三段也要有框）和每个 HTTP 接口的批注（`parentNode` 指向该段的框），跑一次排版脚本，然后照常做步骤 7–10。段内层距、段间隙由脚本处理，不要手动平移。
+**只有主代理写 `flow.json`。** 合并时：拼上各段 `nodes` / `edges`，检查 id 不重复、边不跨段；顶层只写一份 `direction` 和 `errors`。再由主代理为每一段加一个分组和一张组内说明（执行节点和说明都写该框的 `parentNode`）。按需求顺序给第 i 段（从 0 起）的分组框写粗略原点（`TB` 为 `{x: i*1000, y: 0}`，`LR` 为 `{x: 0, y: i*1000}`），组内说明写 `{0, 0}`，脚本靠框的坐标决定段的先后。跑一次排版脚本，然后照常做步骤 7–10。段内层距、段间隙由脚本处理，不要手动平移。
 
 ## 环境里没有对应节点：先做 Bundle，再回来编排
 
@@ -289,7 +289,7 @@ WARNING 不影响退出码，但也要修：`data.icon` 缺失、边上 `relatio
 
 表单里没有 `authType`、需求也对不上上表、又不是原文验签时，才在触发器下游加一个真实存在的校验节点；没有能校验的节点就按「环境里没有对应节点」处理。不要把不存在的 `authType` 写进参数。
 
-**每个接口一张批注**，挂在该接口的分组里靠左（见 [comment-node.md](reference/comment-node.md)）。这段还没有分组时先加一个框，执行节点和批注都写它的 `parentNode`，框标题用接口短名。正文按该文件的接口说明写，从「接口说明」起笔，不要再写和框标题相同的标题。高度交给脚本，和组内节点列对齐。方法、路径、是否认证、有则写请求头 / 参数 / 示例 / 错误码，最后写访问地址。访问地址：生产 `http://{externalHost}:{httpPort}{path}`，测试在 path 前加 `/@test`。`externalHost` / `httpPort` 取已确认服务器在 `project workers` 里的字段；缺了就只写方法和 `parameters.path`，注明完整地址是「服务器访问地址 + 路径」，并提示到控制台「节点管理」设置。不要编造域名，不要把凭证密钥写进批注。
+**每个接口的组内说明就是一张接口批注**，挂在该功能的分组里靠左（见 [comment-node.md](reference/comment-node.md)）。框标题用接口短名。正文从「接口说明」起笔，不要再写和框标题相同的标题，也不要再加一张功能说明。高度交给脚本，和组内节点列对齐。方法、路径、是否认证、有则写请求头 / 参数 / 示例 / 错误码，最后写访问地址。访问地址：生产 `http://{externalHost}:{httpPort}{path}`，测试在 path 前加 `/@test`。`externalHost` / `httpPort` 取已确认服务器在 `project workers` 里的字段；缺了就只写方法和 `parameters.path`，注明完整地址是「服务器访问地址 + 路径」，并提示到控制台「节点管理」设置。不要编造域名，不要把凭证密钥写进批注。
 
 ### 试跑 HTTP 接口
 
