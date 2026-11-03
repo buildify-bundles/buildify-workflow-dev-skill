@@ -220,6 +220,7 @@ buildify --json workflow save-draft -p "$PROJ" -w "$WF" -f ./flow.json
 ```json
 { "id": "n-Gq3aT9xK", "type": "group", "position": { "x": 1000, "y": 0 },
   "data": { "name": "GroupNode", "label": "group", "summary": "查询", "isLayoutNode": true,
-            "parameters": { "groupLabel": "查询", "groupColor": "#5b7c99", "groupOpacity": 0.06,
-                            "groupRadius": 12, "groupBorderStyle": "dashed", "groupBorderWidth": 1 } } }
+            "parameters": { "groupLabel": "查询", "groupColor": "#4a535c", "groupOpacity": 0.03,
+                            "groupRadius": 12, "groupBorderStyle": "solid", "groupBorderWidth": 1.5,
+                            "groupBorderColor": "#4a535c" } } }
 ```

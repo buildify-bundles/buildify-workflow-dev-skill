@@ -1490,26 +1490,40 @@ function placeDecorations(anchors, units, direction) {
   return moved
 }
 
-/** 组内批注靠左：顶边与组内节点对齐，分组包络再把留白算进去。 */
+/** 组内批注靠左：顶边与组内节点对齐，高度至少铺满节点列，分组包络再把留白算进去。 */
 function placeGroupCommentsLeft(decorations, units) {
   if (!decorations.length || !units.length) return 0
   let minX = Infinity
   let minY = Infinity
+  let maxBottom = -Infinity
   for (const unit of units) {
     const rect = nodeRect(unit)
     if (rect.x < minX) minX = rect.x
     if (rect.y < minY) minY = rect.y
+    const bottom = rect.y + rect.h
+    if (bottom > maxBottom) maxBottom = bottom
+  }
+  const columnHeight = Math.max(0, maxBottom - minY)
+  const sizes = decorations.map(node => getNodeSize(node, nodeSizeFallback(node)))
+  const heights = sizes.map(size => size.h)
+  const gapTotal = DECORATION_GAP * Math.max(0, decorations.length - 1)
+  const stack = heights.reduce((sum, height) => sum + height, 0) + gapTotal
+  if (columnHeight > stack && heights.length) {
+    heights[heights.length - 1] += columnHeight - stack
   }
   let cursorY = minY
   let moved = 0
-  for (const node of decorations) {
-    const size = getNodeSize(node, nodeSizeFallback(node))
-    const x = minX - DECORATION_GAP - size.w
-    const y = cursorY
-    if ((node.position?.x ?? 0) !== x || (node.position?.y ?? 0) !== y) moved += 1
-    node.position = { x, y }
-    cursorY += size.h + DECORATION_GAP
-  }
+  decorations.forEach((node, index) => {
+    const width = sizes[index].w
+    const height = Math.max(50, Math.round(heights[index]))
+    const x = minX - DECORATION_GAP - width
+    if ((node.position?.x ?? 0) !== x || (node.position?.y ?? 0) !== cursorY || Math.abs(sizes[index].h - height) >= 1) {
+      moved += 1
+    }
+    setNodeSize(node, width, height, true)
+    node.position = { x, y: cursorY }
+    cursorY += height + DECORATION_GAP
+  })
   return moved
 }
 

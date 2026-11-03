@@ -235,7 +235,7 @@ Markdown 便签，**默认不要加**。没有对外 HTTP 接口时，流程只�
 | 分支条件或互斥路径，光看 `summary` 会走错 | 空流程；每个执行节点贴一张 |
 | 调用约定、凭证用途、单位/映射 **写进 `summary` 放不下**，不写会误用 | 用批注重复触发器上已经写好的入站认证 |
 
-HTTP 接口说明写在**该段分组框里面、靠左**。这段还没有分组时先加一个框（标题用接口短名），执行节点和批注都写这个框的 `parentNode`。批注初始坐标 `{ "x": 0, "y": 0 }`，宽高 `480×480`。脚本排完组内节点后，把批注放到节点左侧（净空 24），顶边与最上的组内节点对齐，再把框加宽包住它。批注不连线。
+HTTP 接口说明写在**该段分组框里面、靠左**。这段还没有分组时先加一个框（标题用接口短名），执行节点和批注都写这个框的 `parentNode`。批注初始坐标 `{ "x": 0, "y": 0 }`，宽 `480`。脚本排完组内节点后，把批注放到节点左侧（净空 24），顶边与最上的组内节点对齐，高度铺满这一列节点，再把框加宽包住它。正文不要写和框标题相同的标题。批注不连线。
 
 其他批注不进分组，放在被说明盒子外侧，避免和节点或分组框叠在一起，也不要挡住连线中点。
 
@@ -243,9 +243,9 @@ HTTP 接口说明写在**该段分组框里面、靠左**。这段还没有分�
 
 单段组外批注：`TB` 放最左外侧，`LR` 放最上外侧（公式见下）。组内的 HTTP 接口说明不要放在框外或框的上方。
 
-控制台自动排版（`applyLayout.js`）不把批注送进 Dagre。组内批注排完节点后放到节点左侧，净空 **24**，顶边与组内最上节点对齐。组外批注记下它相对**最近一个可排版节点**的偏移，排完主链后再贴回去；压到别的盒子上时，沿交叉轴（`TB` 左右、`LR` 上下）挪到最近的空位，净空同样是 **24**。组外批注要紧挨着它说明的那段放，不要放在两段之间。
+控制台自动排版（`applyLayout.js`）不把批注送进 Dagre。组内批注排完节点后放到节点左侧，净空 **24**，顶边与组内最上节点对齐，高度至少铺满这一列节点。组外批注记下它相对**最近一个可排版节点**的偏移，排完主链后再贴回去；压到别的盒子上时，沿交叉轴（`TB` 左右、`LR` 上下）挪到最近的空位，净空同样是 **24**。组外批注要紧挨着它说明的那段放，不要放在两段之间。
 
-批注矩形 = `position` 起、`style.width` × `style.height`（宽默认 **320**，高按正文，最小 180×50，高不超过 **480**）。最左 / 最上取**顶层盒子外缘**：没有 `parentNode` 的节点用它的 `x` / `y`；分组用框的 `x` / `y`（标题在框内）。组内子节点已经在框里，不要拿子节点的绝对坐标当最左 / 最上。
+批注矩形 = `position` 起、`style.width` × `style.height`（宽默认 **320**，高按正文，最小 180×50，高不超过 **480**）。组内接口说明宽 **480**，高由脚本写成至少与组内节点列相同。最左 / 最上取**顶层盒子外缘**：没有 `parentNode` 的节点用它的 `x` / `y`；分组用框的 `x` / `y`（标题在框内）。组内子节点已经在框里，不要拿子节点的绝对坐标当最左 / 最上。
 
 - 单段 `TB`：放在最左外缘的左侧。`x = 最左外缘 - 批注宽 - 24`，`y` 与被说明盒子的顶边对齐。右缘和最左盒子之间空出 **24**
 - 单段 `LR`：放在最上外缘的上方。`y = 最上外缘 - 批注高 - 24`，`x` 与被说明盒子的左缘对齐。底边和最上盒子之间空出 **24**
@@ -254,7 +254,7 @@ HTTP 接口说明写在**该段分组框里面、靠左**。这段还没有分�
 
 `zIndex: 2`。不要写 `sourcePosition` / `targetPosition`。HTTP 接口说明要写 `parentNode`（分组框 id）；其他批注不要写 `parentNode`。组外批注、无分支、主链 `x=45`、`y=24`、批注宽 320 时，先算出 `x = 45 - 320 - 24 = -299`，再把顶层整体右移，使批注落在 `{ "x": 40, "y": 24 }`，主链因此到 `x = 384`。高度按正文重算后，横向偏移仍只看宽度。
 
-正文写 `parameters.commentMarkdown`。HTTP 接口用 [comment-node.md](comment-node.md) 的接口说明（方法、路径、认证、参数表、示例、错误码、访问地址），宽高写成 `480×480`，超出的部分在框内滚动。其他批注仍是短的 `##` 标题加一两句。高度按正文估：`28 + 17×正文行数 + 20×标题行数`，限制在 50–480；超过 480 写成 480。不超过就用估出来的高度，不要留出大块空白。
+正文写 `parameters.commentMarkdown`。HTTP 接口用 [comment-node.md](comment-node.md) 的接口说明（方法、路径、认证、参数表、示例、错误码、访问地址），开头不要写和分组标题相同的标题。宽写成 `480`，高先按正文估，排版后至少与组内节点列同高；节点列更高时批注跟着变高，文档在这个高度里看。其他批注仍是短的 `##` 标题加一两句。高度按正文估：`28 + 17×正文行数 + 20×标题行数`，限制在 50–480；超过 480 写成 480。不超过就用估出来的高度，不要留出大块空白。
 
 `externalHost`、`httpPort` 用已确认服务器的字段；缺了就只保留方法和 path，写「完整地址 = 服务器访问地址 + 路径」。不要编造域名。测试前缀是 `/@test`，生产不加。
 
@@ -278,15 +278,16 @@ HTTP 接口说明写在**该段分组框里面、靠左**。这段还没有分�
     "isShowConfigOnAdd": false,
     "autoEdit": false,
     "parameters": {
-      "commentMarkdown": "### 创建用户\n\n**接口说明**：创建一个新用户账号\n\n**请求方式**：`POST`\n\n**请求路径**：`/users`\n\n**是否需要认证**：是\n\n#### 访问地址\n\n- 生产：`http://{externalHost}:{httpPort}/users`\n- 测试：`http://{externalHost}:{httpPort}/@test/users`",
+      "commentMarkdown": "**接口说明**：创建一个新用户账号\n\n**请求方式**：`POST`\n\n**请求路径**：`/users`\n\n**是否需要认证**：是\n\n#### 访问地址\n\n- 生产：`http://{externalHost}:{httpPort}/users`\n- 测试：`http://{externalHost}:{httpPort}/@test/users`",
       "commentBackground": "ink",
-      "commentBackgroundOpacity": 0.03
+      "commentBackgroundOpacity": 0,
+      "commentBorderWidth": 0
     }
   }
 }
 ```
 
-旧画布可能是 `type: "notes"`，读写时与 `comment` 同等对待。背景默认 `ink`（`#4a535c`，透明度 `0.03`）；不要编造 `bundle` 节点名叫 CommentNode 去 `bundle nodes` 里找。**不要用批注当分组框**（分组见下一节）。
+旧画布可能是 `type: "notes"`，读写时与 `comment` 同等对待。背景默认 `ink`（`#4a535c`，透明度 `0`），边框宽度默认 `0`，不显示；不要编造 `bundle` 节点名叫 CommentNode 去 `bundle nodes` 里找。**不要用批注当分组框**（分组见下一节）。
 
 ## 节点分组
 
@@ -305,12 +306,12 @@ HTTP 接口说明写在**该段分组框里面、靠左**。这段还没有分�
 | 分组框 `data.isLayoutNode` | 框 | `true`（解析器跳过） |
 | 分组框 `data.name` / `label` | 框 | `"GroupNode"` / `"group"`。不要去 `bundle nodes` 里找这个名字 |
 | 分组框 `data.summary` | 框 | 分区名，短词（如「上报」「查询」），与 `parameters.groupLabel` 相同 |
-| 分组框 `parameters.groupColor` | 框 | 默认雾蓝 `"#5b7c99"`。多组可换色相，透明度不要跟着变 |
-| 分组框 `parameters.groupOpacity` | 框 | **默认 `0.06`**（与控制台缺省一致）。合法 `0.04`–`0.72`。编排时仍显式写上 |
+| 分组框 `parameters.groupColor` | 框 | 默认墨青 `"#4a535c"`。多组可换色相，透明度和边框宽度不要跟着变 |
+| 分组框 `parameters.groupOpacity` | 框 | **默认 `0.03`**。合法 `0`–`1`。编排时仍显式写上 |
 | 分组框 `parameters.groupRadius` | 框 | 默认 `12` |
-| 分组框 `parameters.groupBorderStyle` | 框 | 默认 `"dashed"`（还可 `solid` / `dotted` / `none`） |
-| 分组框 `parameters.groupBorderWidth` | 框 | 默认 `1`（`0.5`–`8`） |
-| 分组框 `parameters.groupBorderColor` | 框 | **不写**。缺省时边框和标题跟随 `groupColor`，换底色一起变 |
+| 分组框 `parameters.groupBorderStyle` | 框 | 默认 `"solid"`（还可 `dashed` / `dotted` / `none`） |
+| 分组框 `parameters.groupBorderWidth` | 框 | 默认 `1.5`（`0.5`–`8`，按 0.5 取整） |
+| 分组框 `parameters.groupBorderColor` | 框 | 默认 `"#4a535c"`。编排时写上，边框用实色，不跟填充透明度变淡 |
 | 子节点 `parentNode` | **组内每个组件必写** | 分组框的 `id`。不写就分不进去 |
 | 子节点 `position` | 脚本写 | **相对**分组框左上角。默认留白：左/右 **40**，上 **68**（放框内标题），下 **24**；组内有回连时按绕线需要加宽 |
 | 子节点 `extent` | 建议 | `"parent"`，拖动时留在框内 |
@@ -331,11 +332,12 @@ HTTP 接口说明写在**该段分组框里面、靠左**。这段还没有分�
     "isLayoutNode": true,
     "parameters": {
       "groupLabel": "查询",
-      "groupColor": "#5b7c99",
-      "groupOpacity": 0.06,
+      "groupColor": "#4a535c",
+      "groupOpacity": 0.03,
       "groupRadius": 12,
-      "groupBorderStyle": "dashed",
-      "groupBorderWidth": 1
+      "groupBorderStyle": "solid",
+      "groupBorderWidth": 1.5,
+      "groupBorderColor": "#4a535c"
     }
   }
 }
@@ -375,7 +377,7 @@ HTTP 接口说明写在**该段分组框里面、靠左**。这段还没有分�
 - HTTP 接口说明进该段分组，写 `parentNode`，排版后在框内靠左。其他批注不进组、不写 `parentNode`；放完分组后，它的「最左 / 最上」把分组框外缘算进去。
 - 不要用 `type: comment` 当分组框。不要给业务节点加 `isLayoutNode`。
 - 一层即可，不要嵌套分组，除非用户明确要求。
-- 背景写上默认雾蓝 `#5b7c99`、透明度 **`0.06`**。多组可以换 `groupColor` 的色相，`groupOpacity` 仍用 `0.06`，不要低于 `0.04`。
+- 背景写上默认墨青 `#4a535c`、透明度 **`0.03`**，边框实线 **`1.5`**、颜色 `#4a535c`、圆角 `12`。多组可以换 `groupColor` 的色相，`groupOpacity` 仍用 `0.03`，边框宽度仍用 `1.5`。`groupLabel` 写这段的短名。
 
 ## 边
 

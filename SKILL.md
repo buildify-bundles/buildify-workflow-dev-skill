@@ -93,8 +93,8 @@ description: >-
 - **边**：每两个节点之间只有一条边，`id` 固定 `{source}_{target}`，不要按出口拆成 `…_Success` / `…_Failure` 两条。接到同一下游的多个出口（如 Success+Failure）全部放进这条边的 `data.relations[]` 数组。每个 relation 必须有 `name` 和 `label`，从 `node-relations` 整份拷贝；`description` 可选，可以照目录写，也可以改写成本流程里的含义（如「查不到也继续」）。MCP 自定义关系再带 `_id` / `icon` / `mcpKind`，并同步到源节点 `data.relations`。
 - **表达式**按字段 `uiComponent` 选语法：`JsonExpressionInput` 默认整字段 `"={{msg.xxx}}"` 保留类型，要拼字符串才写 `"=前缀 {{msg.xxx}}"`（`=` 必须是第一个字符，`{{ }}` 里不运算）；`SqlEditor` 用 `#{}` / `${}`；文本及其他用 `{{ }}`。见 [expressions.md](reference/expressions.md)。
 - **JS 节点** `parameters.code` 分段并写中文注释：顶部写入参/出参，每段用 `// --- 段名 ---` 隔开。
-- **批注默认不加。** 例外：每个 HTTP 接口一张（正文见 comment-node.md 的接口说明）；用户要求；分支条件或调用约定在 `summary` 里写不下、不写会误用。不连线。HTTP 接口说明写 `parentNode` 挂到该段分组，初始坐标 `{0, 0}`，脚本把它放在组内靠左；这段还没有分组时先加一个框。其他批注不写 `parentNode`，初始坐标在被说明节点外侧（`TB` 左侧、`LR` 上方）。
-- **分组默认不加。** 多于两段互不连线的逻辑（三段起）时每段一个框，有 HTTP 接口的段也加一个框（接口说明放在框内靠左），或用户要求时才加。组内节点必须写 `parentNode`；框的宽高和组内坐标交给脚本（标题在框内，左右留白 40，上留白 68，有回连时自动加宽）；框背景写 `groupColor: "#5b7c99"`、`groupOpacity: 0.06`。
+- **批注默认不加。** 例外：每个 HTTP 接口一张（正文见 comment-node.md 的接口说明）；用户要求；分支条件或调用约定在 `summary` 里写不下、不写会误用。不连线。HTTP 接口说明写 `parentNode` 挂到该段分组，初始坐标 `{0, 0}`，脚本把它放在组内靠左，高度铺满组内节点列。正文不要写和分组标题相同的标题。这段还没有分组时先加一个框。其他批注不写 `parentNode`，初始坐标在被说明节点外侧（`TB` 左侧、`LR` 上方）。
+- **分组默认不加。** 多于两段互不连线的逻辑（三段起）时每段一个框，有 HTTP 接口的段也加一个框（接口说明放在框内靠左），或用户要求时才加。组内节点必须写 `parentNode`；框的宽高和组内坐标交给脚本（标题在框内，左右留白 40，上留白 68，有回连时自动加宽）；框背景写 `groupColor: "#4a535c"`、`groupOpacity: 0.03`、`groupBorderColor: "#4a535c"`、`groupBorderStyle: "solid"`、`groupBorderWidth: 1.5`、`groupRadius: 12`。`groupLabel` 用这段的短名，不要固定写成某一个词。
 - **两段及以上互不连线**时按下一节生成。
 
 ### 保存前检查边和图标
@@ -289,7 +289,7 @@ WARNING 不影响退出码，但也要修：`data.icon` 缺失、边上 `relatio
 
 表单里没有 `authType`、需求也对不上上表、又不是原文验签时，才在触发器下游加一个真实存在的校验节点；没有能校验的节点就按「环境里没有对应节点」处理。不要把不存在的 `authType` 写进参数。
 
-**每个接口一张批注**，挂在该接口的分组里靠左（见 [comment-node.md](reference/comment-node.md)）。这段还没有分组时先加一个框，执行节点和批注都写它的 `parentNode`，框标题用接口短名。正文按该文件的接口说明写：方法、路径、是否认证、有则写请求头 / 参数 / 示例 / 错误码，最后写访问地址。访问地址：生产 `http://{externalHost}:{httpPort}{path}`，测试在 path 前加 `/@test`。`externalHost` / `httpPort` 取已确认服务器在 `project workers` 里的字段；缺了就只写方法和 `parameters.path`，注明完整地址是「服务器访问地址 + 路径」，并提示到控制台「节点管理」设置。不要编造域名，不要把凭证密钥写进批注。
+**每个接口一张批注**，挂在该接口的分组里靠左（见 [comment-node.md](reference/comment-node.md)）。这段还没有分组时先加一个框，执行节点和批注都写它的 `parentNode`，框标题用接口短名。正文按该文件的接口说明写，从「接口说明」起笔，不要再写和框标题相同的标题。高度交给脚本，和组内节点列对齐。方法、路径、是否认证、有则写请求头 / 参数 / 示例 / 错误码，最后写访问地址。访问地址：生产 `http://{externalHost}:{httpPort}{path}`，测试在 path 前加 `/@test`。`externalHost` / `httpPort` 取已确认服务器在 `project workers` 里的字段；缺了就只写方法和 `parameters.path`，注明完整地址是「服务器访问地址 + 路径」，并提示到控制台「节点管理」设置。不要编造域名，不要把凭证密钥写进批注。
 
 ### 试跑 HTTP 接口
 
