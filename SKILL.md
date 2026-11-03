@@ -9,6 +9,7 @@ description: >-
   mentions 编排流程, 工作流, flow.json, 画布, Webhook 接口, HTTP 接口, 试跑,
   @test, 发布, 版本号, 凭证, 服务器, 节点管理, 批注, 节点分组, 横排, 竖排,
   连线标签, 多段, 独立接口, 入站认证, 访问地址, 飞书卡片, 失败告警, 缺少节点,
+  验签, 回调, 微信支付, 支付宝, Stripe,
   部署记录, 历史版本, 绑定服务器, 换服务器, 删除流程, 改名, 改凭证, 删除凭证,
   凭证被哪些流程使用.
   When no package or node covers the need, says so and proposes a default
@@ -266,22 +267,33 @@ WARNING 不影响退出码，但也要修：`data.icon` 缺失、边上 `relatio
 
 入口用当前环境的 Webhook 触发器，目录名通常是 `WebhookTriggerNode`，以 `bundle nodes` 为准。
 
-**入口验证优先写在触发器上。** `node-properties` 里有「入站认证」（字段 `authType`）时用它，不要在下游再加一个做同样校验的节点：
+**认证先用这个触发器里已有的方式。** 对得上就写 `authType`，不要新做触发器，也不要在下游再验一遍。`node-properties` 里有「入站认证」时用它：
 
 | `authType` | 凭证槽 | 何时 |
 |---|---|---|
 | `none` | 无 | 用户没要求校验，或内网 / 网关已经鉴权 |
 | `httpBasic` | `httpBasicAuth`（HttpBasicAuth） | HTTP Basic |
-| `apiKey` | `apiKey`（HeaderAuth） | 自定义 Header |
+| `apiKey` | `apiKey`（HeaderAuth） | 自定义 Header，含固定 Token、签名放在某个 Header 里但**不依赖原始报文体** |
 | `jwtAuth` | `jwtAuth`（JwtAuth） | `Authorization: Bearer` |
 
-按 IP 限制访问写触发器高级选项 `options.acl`，不要再单做一段 IP 判断。开了认证后凭证槽仍按「凭证」三选一，不要自己挑一条。表单里没有 `authType` 时，才在触发器下游加一个真实存在的校验节点；没有能校验的节点就按「环境里没有对应节点」处理。不要把不存在的 `authType` 写进参数。
+按 IP 限制访问写这个触发器的高级选项 `options.acl`，不要再单做一段 IP 判断。开了认证后凭证槽仍按「凭证」三选一，不要自己挑一条。
+
+**对不上表里的方式，再另做处理。** 典型是微信支付、支付宝、Stripe 这类要按原始报文体计算签名的回调：`Content-Type: application/json` 时，`WebhookTriggerNode` 把 `request().body()` 解析成对象，原始字节回不来；表单体会收成字段。不要把这种验签写成 `apiKey` 或 `jwtAuth`，也不要在 `WebhookTriggerNode` 后面串一个验签节点。
+
+1. 先 `bundle list` / `bundle nodes` 找这个渠道自己的回调触发器。有就用它当入口。
+2. 没有就按「环境里没有对应节点」交给 bundle-dev，做这个渠道的**触发器**。它自己 `Route.create`，用 `request().body()` 读原始字符串，并在触发器里验签。验签失败按该渠道官方文档直接写回，不把请求送进流程。
+3. 返回要两种都支持，编排时按渠道文档选一种：
+   - **直接返回**：验签通过后立刻按文档要求的状态码、Content-Type 和正文写回，流程在后台继续。
+   - **处理完再返回**：先不结束连接，下游接核心包的 `WebhookResponseNode` 写回。触发消息的 eventId 用这次 HTTP 的 `getRequestId()`，`WebhookResponseNode` 靠消息头 `__correlationId` 找到这条连接。
+4. 编排时这个触发器就是入口，后面只接业务。选了处理完再返回时，Success 末端接 `WebhookResponseNode`。
+
+表单里没有 `authType`、需求也对不上上表、又不是原文验签时，才在触发器下游加一个真实存在的校验节点；没有能校验的节点就按「环境里没有对应节点」处理。不要把不存在的 `authType` 写进参数。
 
 **每个接口一张批注**，挂在该接口的分组里靠左（见 [comment-node.md](reference/comment-node.md)）。这段还没有分组时先加一个框，执行节点和批注都写它的 `parentNode`，框标题用接口短名。正文按该文件的接口说明写：方法、路径、是否认证、有则写请求头 / 参数 / 示例 / 错误码，最后写访问地址。访问地址：生产 `http://{externalHost}:{httpPort}{path}`，测试在 path 前加 `/@test`。`externalHost` / `httpPort` 取已确认服务器在 `project workers` 里的字段；缺了就只写方法和 `parameters.path`，注明完整地址是「服务器访问地址 + 路径」，并提示到控制台「节点管理」设置。不要编造域名，不要把凭证密钥写进批注。
 
 ### 试跑 HTTP 接口
 
-入口是 Webhook 触发器时，步骤 9 按这个顺序做：
+入口是 Webhook 触发器或渠道回调触发器时，步骤 9 按这个顺序做：
 
 1. **取访问地址。** 用已确认服务器的 `externalHost` / `httpPort`（`test-run` 返回里若带访问地址，以它为准），拼成 `BASE=http://{externalHost}:{httpPort}`。字段缺失时不要猜 hostname、`localhost` 或内网 IP，按第 3 步处理，原因写「该服务器还没有访问地址」。
 2. **先测通不通。** 只测连接，不调业务路径：

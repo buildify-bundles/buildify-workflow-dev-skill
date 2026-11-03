@@ -29,7 +29,7 @@ buildify --json workflow validate -p "$PROJ" -f ./flow.json
 
 ## 1. Webhook 触发 → 处理 → 应答
 
-典型链路：入站 Webhook → JS/HTTP 处理 → Webhook 响应。
+典型链路：入站 Webhook → JS/HTTP 处理 → Webhook 响应。认证先用 `WebhookTriggerNode` 已有的 `authType`。只有按原文验签、对不上这些方式时才不用它，见 SKILL「HTTP 接口」。
 
 ```json
 {

@@ -11,6 +11,16 @@
 
 确实没有时**立刻停止**编 JSON / validate / 试跑 / 发布，按下面走。用户确认之前不装 skill、不写 Bundle 代码、不建包。
 
+## 验签回调
+
+先看 `WebhookTriggerNode` 的 `authType` 能不能覆盖（`none` / `httpBasic` / `apiKey` / `jwtAuth`）。对得上就用它，不要到这里来。只有按原始报文验签、对不上这些方式时（微信支付、支付宝、Stripe 等），`bundle nodes` 里又没有该渠道自己的触发器，才是缺这个触发器。通用 `…ApiCall` 不能代替。
+
+方案里的节点必须是触发器。交给 bundle-dev 时写明：
+
+- 自己 `Route.create`，用 `request().body()` 拿到原始字符串后再验签；验签失败按官方文档直接返回，不进入流程
+- 支持两种返回：按文档要求直接写回；处理完后不结束连接，eventId 用 `getRequestId()`，由核心包 `WebhookResponseNode` 写回
+- 这是对不上 `WebhookTriggerNode` 已有认证之后才做的触发器，不要再做下游验签节点
+
 ## 1. 拟默认方案
 
 默认按两份「官方文档」实现：
