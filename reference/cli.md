@@ -69,7 +69,7 @@ buildify --json config profiles
 | `project update-credential -p ID --credentials cred_… [--label 显示名] [--description 说明] [--bundle-version V] [--file -]` | 改凭证的显示名、说明、绑定的软件包版本或表单。至少传一项，没传的保持原值；`--description ''` 清空说明。表单用 stdin `--file -`，只合并传入的字段，空着或掩码的密钥字段保留原值。先问用户。`--json` 不弹确认；不要 `--data` 上 argv，不要回显密钥 |
 | `project delete-credential -p ID --credentials cred_…` | 软删除凭证。还有流程引用时 HTTP 409。先用 `credential-workflows` 告诉用户哪些流程在用，再确认 |
 | `project credential-workflows -p ID --credentials cred_… [--page 1] [--page-size 10]` | 分页列出引用这条凭证的流程，无密钥。权限同 `project credentials` |
-| `project workers -p ID [--online-only]` | 服务器（worker）列表，含 `workerName` / `remark` / 在线状态 / `externalHost` / `httpPort`。给用户看时写 **workerName — 描述 — 在线/离线**（`remark` 为空写「无描述」），不展示 hostname |
+| `project workers -p ID [--online-only]` | 服务器（worker）列表，含 `workerName` / `remark` / 在线状态 / `hostname`；服务端返回时还有 `externalHost` / `httpPort` / `publicIp`（试跑 HTTP 的候选访问地址，没有就问用户）。`hostname` 是机器名，不能当访问地址。给用户看时写 **workerName — 描述 — 在线/离线**（`remark` 为空写「无描述」），不展示 hostname |
 | `workflow list / create` | 流程。`create --worker` 会同时绑定服务器 |
 | `workflow update -p ID -w WF -n "新名称" [--remark 简介]` | 改流程名。不传 `--remark` 就保留原简介。先问用户 |
 | `workflow workers -p ID -w WF` | 已绑定的服务器，含 `workerName` / `remark` / 在线状态 / `deleteStatus`。0 已绑定，1 待移除。改已有流程时用它定服务器 |
@@ -97,7 +97,8 @@ buildify --json config profiles
 每条命令单独执行，看完结果再走下一步（不要写成 shell 循环）：
 
 ```bash
-node <skill 目录>/scripts/check.mjs ./flow.json --fetch --fix
+node <skill 目录>/scripts/check.mjs ./flow.json [--catalog 版本一致的目录文件 ...] --fetch --fix
+# 只复用步骤 4 存下、且版本和画布 bundleVersion 一致的目录；版本对不上的包不传，交给 --fetch 按画布版本重拉
 # 退出码 1：按输出改边的出口名或图标再跑，直到 0
 buildify --json workflow validate -p "$PROJ" -f ./flow.json
 # 退出码 4：读 issues。表单 ERROR 改 data.parameters 再校验；「环」不要拆边，但必须有离开循环的出口，没有就补退出条件再 save-draft
@@ -112,19 +113,20 @@ buildify --json workflow deploy -p "$PROJ" -w "$WF" --worker "$WKR" \
 
 `save-draft` 若冲突（退出码 4），`data` 是最新草稿：在最新 JSON 上重放改动，不要盲着重试同一 version。
 
-HTTP 接口的试跑在 save-draft 和 test-run 之间加一步连通检测，test-run 改成后台跑并请求测试地址：
+HTTP 接口的试跑在 save-draft 和 test-run 之间加一步连通检测，test-run 改成后台跑并请求测试地址。候选地址按顺序逐个测（取自 `project workers` 的 `externalHost` / `httpPort` / `publicIp`，规则见 SKILL「试跑 HTTP 接口」），第一个通的当 `BASE`：
 
 ```bash
-BASE="http://$EXTERNAL_HOST:$HTTP_PORT"     # 来自 project workers；缺了就停下，提示到「节点管理」设置访问地址
-curl -sS -o /dev/null -w '%{http_code}' --connect-timeout 5 --max-time 10 "$BASE/"
-# 上一条退出码非 0：停下，不要 test-run，提示用户检查服务器/端口，或到「节点管理」改访问地址
+curl -sS -o /dev/null -w '%{http_code}' --connect-timeout 5 --max-time 10 "http://$EXTERNAL_HOST:$HTTP_PORT/"   # 1. 登记地址
+curl -sS -o /dev/null -w '%{http_code}' --connect-timeout 5 --max-time 10 "http://$PUBLIC_IP:$HTTP_PORT/"       # 2. 公网 IP，上一条不通才测
+curl -sS -o /dev/null -w '%{http_code}' --connect-timeout 5 --max-time 10 "http://$PUBLIC_IP/"                  # 3. 默认端口，上一条不通才测
+# 全都不通或没有地址：停下，不要 test-run，问用户这台机器的访问方式
 buildify --json workflow test-run -p "$PROJ" -f ./flow.json --worker "$WKR" --timeout 60 > /tmp/test-run.json &
 sleep 3
 curl -sS -X GET -w '\n%{http_code}' --max-time 30 "$BASE/@test/test2"   # 试跑带 /@test，发布后的正式地址不带
 wait
 ```
 
-连通检测和试跑分两次执行，先看检测的退出码再决定是否试跑。不要在 Agent 的持久 shell 里写 `exit`，会把会话退掉。
+每个候选单独执行，看完退出码再决定测下一个还是试跑。不要在 Agent 的持久 shell 里写 `exit`，会把会话退掉。
 
 `curl` 退出码 0 就算通（404 / 401 也算）；6 / 7 / 28 / 35 / 60 算不通。
 

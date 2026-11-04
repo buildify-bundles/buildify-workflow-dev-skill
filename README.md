@@ -34,8 +34,10 @@ git clone https://github.com/buildify-bundles/buildify-workflow-dev-skill.git .c
 GitHub 克隆失败或超时时，把上面命令里的仓库地址换成 Gitee 备用地址 `https://gitee.com/buildify/buildify-workflow-dev-skill.git`，目标目录不变。例如 Cursor 全局：
 
 ```bash
-git clone https://gitee.com/buildify/buildify-workflow-dev-skill.git ~/.cursor/skills/buildify-workflow-dev
+git -c protocol.version=1 clone https://gitee.com/buildify/buildify-workflow-dev-skill.git ~/.cursor/skills/buildify-workflow-dev
 ```
+
+报「不支持 git 协议」或 protocol error 时，就是因为 Gitee 不支持 git 协议 v2。上面这条命令里的 `-c protocol.version=1` 只对这一次克隆生效，不要改全局 git 配置。
 
 其他客户端把同一目录放到各自 skills 路径即可：`~/.claude/skills/`、`~/.agents/skills/`、`~/.codebuddy/skills/`。
 
@@ -73,12 +75,22 @@ buildify --json key test
 
 `scripts/layout.mjs` 的布局函数逐行移植自控制台前端（`eventflow-cloud-frontend`）：
 
-- `composables/applyLayout.js`：`doApplyLayout`、`doApplyGroupLayout` 及其依赖（尺寸、主链加权、拉直短错位、扇出与出口文字层距、同层对齐、过宽扇出拆排、共用收尾节点后置、多段并排/货架折排、外层折行预算、长链折行、分组包络、批注跟随）
-- `components/workflows/edges/routingMetrics.js`：`LOOP_METRICS`、`LABEL_METRICS`、`SMOOTH_JOG`、`isWrapRects`、`getGroupLoopInsets`（组内回连留白、标签层距、拉直阈值）
+- `composables/applyLayout.js`：`doApplyLayout`、`doApplyGroupLayout` 及其依赖（尺寸、回边拆分与分支顺序、主链加权、拉直短错位、扇出与出口文字层距、同层对齐、外层过宽扇出拆排、共用收尾节点后置、多段并排、分组包络、批注放进空白）
+- `components/workflows/edges/routingMetrics.js`：`LOOP_METRICS`、`LABEL_METRICS`、`SMOOTH_JOG`、`isWrapRects`、`hasOpenWrapGap`、`getGroupLoopInsets`（组内回连留白、标签层距、拉直阈值）
 - `components/workflows/edges/edgeLabelSize.js`：出口文字胶囊尺寸。脚本没有 canvas，用它无 canvas 时的字数估算分支；`relationHasCustomIcon` 取自 `utils/mcpServerDefaults.js`
 
-当前对齐到前端 `e156d61`（2026-11-01，保守折行）的 `applyLayout.js`，另有一处组内批注：排完节点后放到左侧，净空 24，顶边与组内最上节点对齐，高度至少铺满这一列节点（`placeGroupCommentsLeft`，脚本和当前工作区的 `applyLayout.js` 一致）。竖排普通层距 **74**，扇出 **104 / 120**（带出口文字的扇出、汇合约 116）；横排 **140**，扇出 **170**。折行预算只给外层：竖排 **16 行**、横排 **12 列**，至少 8 层、超出 1.3 倍才折，只在仅一条线跨过的空隙切；分组内部不折行、不拆排。拆排要求至少 6 个且全是叶子的下游。默认卡片下，单条主链 `TB` 21 张起折、`LR` 16 张起折；单个节点扇出 `TB` 16 个、`LR` 32 个下游起拆。前端改了这几个文件的常量或流程时，把改动同步到脚本里对应的函数，再用两边对同一批样例（TB / LR 主链 3–40 张含长出口名和多出口、扇出 2–40 个含汇合和子树、共用收尾、多段、三段分组、组内回环、嵌套分组和 `--group`、批注）对比坐标和分组尺寸，必须完全一致。脚本只比前端多三处：排版前检查图结构，统计重算的分组数和让开的批注数，整图排版后把顶层节点平移到 `x ≥ 40`、`y ≥ 24`。
+当前对齐到前端 `fbe744b`（2026-11-04，批注不再盖住节点）。各层都不折行，互不连线的几段沿交叉轴依次排开（竖排左右、横排上下，间隙 64 / 72）。回边（深度优先遍历里连回栈中上游的边）不参与分层，同一节点的出边按出口首次出现的顺序插进 Dagre。竖排普通层距 **74**，扇出 **104 / 120**（带出口文字的扇出、汇合约 120）；横排 **140**，扇出 **170**。拆排只在外层做，要求至少 6 个且全是叶子的下游、宽度超过 8 张卡片的 1.3 倍，默认卡片下 11 个起拆。分组留白左右 **48**、上 **84**、下 **48**，组内回环与边框留 **96**。批注先放进节点范围左上角的空白，放不下贴在节点外侧（竖排右侧、横排下方），不改高度。前端改了这几个文件的常量或流程时，把改动同步到脚本里对应的函数，再用两边对同一批样例（TB / LR 主链 3–40 张含长出口名和多出口、扇出 2–40 个含汇合、共用收尾、三段分组、一段分成几个模块分组、组内和顶层回环、嵌套分组和 `--group`、批注）对比坐标和分组尺寸，必须完全一致。脚本只比前端多三处：排版前检查图结构，统计重算的分组数和挪动的批注数，整图排版后把顶层节点平移到 `x ≥ 40`、`y ≥ 24`。前端的 `syncComputedPositions` 只服务于画布渲染，脚本不需要。
 
 ## 使用
 
 对话里提到编排流程、工作流、试跑、发布、Webhook 接口、凭证、批注、节点分组、横排/竖排、入站认证、访问地址、飞书卡片、失败告警、缺少节点、验签、回调、微信支付、支付宝、Stripe、改凭证、删除凭证，或显式 `/buildify-workflow-dev` 即可触发。
+
+直接用中文说需求即可，例如：
+
+- 「做一个 HTTP 接口 `GET /orders/:id`，查 MySQL 订单表返回 JSON」
+- 「每小时把新订单同步到飞书多维表格，失败发飞书告警」
+- 「收微信支付回调，验签后更新订单状态」
+- 「打开『订单查询』这条流程，加一个按手机号查询的分支」
+- 「把『订单查询』试跑一下，没问题就发布」
+
+Agent 会查节点、生成并排版画布、校验、保存草稿、试跑，确认版本号后发布，只在项目、服务器、凭证缺的时候让你点选。默认竖排、不写接口文档和批注、只有特别复杂的流程才按功能模块分组、试跑通过后发布；要改就在需求里说「横排」「写一份接口文档」「按模块分组」「只保存草稿」。

@@ -34,8 +34,8 @@ const LOOP_METRICS = {
   loopMargin: 28,
   /** 与分组边框平行时至少保持的距离，否则算贴边 */
   groupClearance: 18,
-  /** 组内回环与分组边框之间留出的距离 */
-  loopGroupGap: 32,
+  /** 回环主干与分组边框之间留出的空白。两端都在组内时线留在框内，靠分组留白把边框让开 */
+  loopGroupGap: 96,
 }
 
 /**
@@ -83,6 +83,36 @@ function isWrapRects(sourceRect, targetRect, axes) {
     && targetRect[axes.crossLo] >= sourceRect[axes.crossHi] - 0.5
 }
 
+/**
+ * 折行边要走的交叉轴空隙是否真有空档。
+ * 路由会把节点向外扩 obstaclePadding，看起来有缝、扩完就堵死的不算。
+ * 没有空档时会退回侧面回环，分组也要按回环留白，否则线会贴着边框。
+ */
+function hasOpenWrapGap(source, target, rects, axes) {
+  const pad = LOOP_METRICS.obstaclePadding
+  const gapLo = source[axes.crossHi]
+  const gapHi = target[axes.crossLo]
+  const minGap = LOOP_METRICS.laneGap * 2 + 8
+  if (gapHi - gapLo < minGap) return false
+  const flowLo = Math.min(source[axes.lo], target[axes.lo])
+  const flowHi = Math.max(source[axes.hi], target[axes.hi])
+  const intervals = []
+  for (const rect of rects) {
+    if (rect === source || rect === target) continue
+    if (rect[axes.hi] + pad <= flowLo || rect[axes.lo] - pad >= flowHi) continue
+    const lo = Math.max(rect[axes.crossLo] - pad, gapLo)
+    const hi = Math.min(rect[axes.crossHi] + pad, gapHi)
+    if (hi > lo) intervals.push([lo, hi])
+  }
+  intervals.sort((a, b) => a[0] - b[0])
+  let reach = gapLo
+  for (const [lo, hi] of intervals) {
+    if (lo - reach >= minGap) return true
+    reach = Math.max(reach, hi)
+  }
+  return gapHi - reach >= minGap
+}
+
 function rectBounds(rects) {
   return {
     left: Math.min(...rects.map((rect) => rect.left)),
@@ -124,8 +154,8 @@ function getGroupLoopInsets({ rects = [], edges = [], vertical = true, bounds } 
     const source = rectById.get(edge?.source)
     const target = rectById.get(edge?.target)
     if (!source || !target || source === target || !isBackward(source, target, axes)) continue
-    // 折行边的通道在段间空隙里，只需给两端引线留出不贴边的距离
-    if (isWrapRects(source, target, axes)) {
+    // 折行边能从段间空隙穿过时，只需给两端引线留出不贴边的距离。空隙被挡住时会改走侧面回环
+    if (isWrapRects(source, target, axes) && hasOpenWrapGap(source, target, rects, axes)) {
       const lead = loopLeadClearance(0)
       need(axes.hi, lead - (content[axes.hi] - source[axes.hi]))
       need(axes.lo, lead - (target[axes.lo] - content[axes.lo]))
@@ -178,23 +208,26 @@ function relationHasCustomIcon(icon) {
 }
 
 /** 与 DefaultEdge.vue 的 .edge-label / .edge-label-text 保持一致 */
-const LABEL_HEIGHT = 18
-const PAD_INLINE = 8
+const LABEL_HEIGHT = 22
+const PAD_INLINE = 6
 const BORDER = 1
-const GAP = 3
+const GAP = 4
 const ICON = 12
 const NAME_MAX = 180
 const NAME_MAX_MULTI = 148
-const BADGE_PAD = 3
-const BADGE_MIN = 14
+const BADGE_PAD = 4
+const BADGE_MIN = 16
+const BADGE_BORDER = 1
 /** 运行态条数按最宽的常见值预留，计数变化不改变标签尺寸 */
 const COUNT_SAMPLE = '9,999'
-const COUNT_MARGIN = 2
+const COUNT_MARGIN = 4
+/** running 时 +N 在条数内部，间距是徽章自己的 margin，不是胶囊的 flex gap */
+const RUNNING_BADGE_GAP = 2
 
 /** 没有 canvas 时按字号估算：全角字约等于字号，半角约 0.6 倍 */
 function estimateText(text) {
   let width = 0
-  for (const char of text) width += char.charCodeAt(0) > 255 ? 10 : 6
+  for (const char of text) width += char.charCodeAt(0) > 255 ? 11 : 6.6
   return width
 }
 
@@ -215,8 +248,8 @@ function measureEdgeLabelSize(relations, { running = false } = {}) {
   if (relationHasCustomIcon(relations[0]?.icon)) width += ICON + GAP
   if (running) width += COUNT_MARGIN + textWidth(COUNT_SAMPLE)
   if (multi) {
-    const badge = Math.max(BADGE_MIN, textWidth(`+${relations.length - 1}`) + BADGE_PAD * 2)
-    width += badge + (running ? COUNT_MARGIN : GAP)
+    const badge = Math.max(BADGE_MIN, textWidth(`+${relations.length - 1}`) + BADGE_PAD * 2 + BADGE_BORDER * 2)
+    width += badge + (running ? RUNNING_BADGE_GAP : GAP)
   }
   return { width: width + PAD_INLINE * 2 + BORDER * 2, height: LABEL_HEIGHT }
 }
@@ -234,10 +267,10 @@ function edgeLabelSize(edge, options) {
 const DEFAULT_NODE_WIDTH = 248
 const DEFAULT_NODE_HEIGHT = 63
 
-/** 标题在框内左上角。顶边留白要放下标题，并和节点状态条拉开距离 */
-const GROUP_PAD_X = 40
-const GROUP_PAD_TOP = 68
-const GROUP_PAD_BOTTOM = 24
+/** 与 utils/groupNode.js 的 GROUP_PADDING_* 一致。顶边是标题高度 36 再加同样的留白 */
+const GROUP_PAD_X = 48
+const GROUP_PAD_TOP = 84
+const GROUP_PAD_BOTTOM = 48
 /** 标题在框内左上角，不再在框外占高 */
 const GROUP_TITLE_OVERHANG = 0
 const GROUP_MIN_WIDTH = 240
@@ -494,6 +527,16 @@ function alignRankStart(units, direction) {
 
 /** 扇出到至少这么多个下游时才考虑拆排 */
 const SPLIT_MIN_FANOUT = 6
+/** 拆排时一排在交叉轴上最多放几个节点宽（含节点间距） */
+const SPLIT_CROSS_CELLS = 8
+/** 超出上限这么多才拆排，避免刚好超一点就拆出一小排 */
+const SPLIT_TOLERANCE = 1.3
+
+function splitCrossLimit(units, direction, nodesep) {
+  const { maxWidth, maxHeight } = typicalNodeSize(units)
+  const cell = (isHorizontalDir(direction) ? maxHeight : maxWidth) + nodesep
+  return SPLIT_CROSS_CELLS * cell - nodesep
+}
 
 /**
  * 过宽的扇出层拆成多排：每个下游作为一块，交错排进几排，
@@ -502,8 +545,9 @@ const SPLIT_MIN_FANOUT = 6
  * 只处理整层都来自同一扇出、且下游全是没有出边的叶子的情况；
  * 带子树的扇出拆排后各支交错难以阅读，保持 Dagre 的结果。
  */
-function splitWideRanks(units, scopeEdges, direction, budget, nodesep) {
-  if (!budget?.cross || units.length <= SPLIT_MIN_FANOUT) return
+function splitWideRanks(units, scopeEdges, direction, nodesep) {
+  if (units.length <= SPLIT_MIN_FANOUT) return
+  const crossLimit = splitCrossLimit(units, direction, nodesep)
   const horizontal = isHorizontalDir(direction)
   const flowAxis = horizontal ? 'x' : 'y'
   const crossAxis = horizontal ? 'y' : 'x'
@@ -548,8 +592,8 @@ function splitWideRanks(units, scopeEdges, direction, budget, nodesep) {
     const crossMin = Math.min(...blocks.map(block => block.crossMin))
     const crossMax = Math.max(...blocks.map(block => block.crossMin + block.crossSize))
     const extent = crossMax - crossMin
-    if (extent <= budget.cross * WRAP_TOLERANCE) continue
-    const rowCount = Math.min(Math.ceil(extent / budget.cross), blocks.length)
+    if (extent <= crossLimit * SPLIT_TOLERANCE) continue
+    const rowCount = Math.min(Math.ceil(extent / crossLimit), blocks.length)
     if (rowCount < 2) continue
 
     const slot = blocks.reduce((sum, block) => sum + block.crossSize, 0) / blocks.length + nodesep
@@ -753,108 +797,19 @@ function shiftNodes(nodes, dx, dy) {
 }
 
 /**
- * 按给定的交叉轴上限，把几段依次排进若干排：排内沿交叉轴并排，放不下就沿流向另起一排。
- * 只计算各段的偏移，不移动节点。
+ * 互不连线的几段沿交叉轴依次排开（横排上下叠放、竖排左右并排），每段都从同一流向起点开始，
+ * 避免高分组把另一段的后续节点顶开。
  */
-function shelfPlacements(boxes, horizontal, limit, gap, shelfGap) {
-  const placements = []
-  let shelfStart = 0
-  let shelfDepth = 0
-  let cursor = 0
-  let width = 0
-  let height = 0
-  for (const box of boxes) {
-    const cross = horizontal ? box.height : box.width
-    const depth = horizontal ? box.width : box.height
-    if (cursor > 0 && cursor + cross > limit) {
-      shelfStart += shelfDepth + shelfGap
-      shelfDepth = 0
-      cursor = 0
-    }
-    placements.push(horizontal ? { x: shelfStart, y: cursor } : { x: cursor, y: shelfStart })
-    cursor += cross + gap
-    shelfDepth = Math.max(shelfDepth, depth)
-    const right = horizontal ? shelfStart + depth : cursor - gap
-    const bottom = horizontal ? cursor - gap : shelfStart + depth
-    width = Math.max(width, right)
-    height = Math.max(height, bottom)
-  }
-  return { placements, width, height }
-}
-
-/**
- * 互不连线的几段沿交叉轴并排，避免高分组把另一段的后续节点顶开。
- * 并排过长时分成几排，让整体接近目标宽高比。
- */
-function packComponents(components, direction, originX, originY, gap, budget) {
+function packComponents(components, direction, originX, originY, gap) {
   if (!components.length) return
   const horizontal = isHorizontalDir(direction)
-  const boxes = components.map(boundsOf)
-  const shelfGap = wrapGap(direction)
-  const crossSizes = boxes.map(box => (horizontal ? box.height : box.width))
-  const total = crossSizes.reduce((sum, size) => sum + size, 0) + gap * (boxes.length - 1)
-  const widest = Math.max(...crossSizes)
-  const crossLimit = budget?.cross ? Math.max(budget.cross, widest) : Infinity
-
-  // 交叉轴超出预算的排法排在后面，和折行的视觉密度保持一致
-  let best = null
-  for (let shelves = 1; shelves <= boxes.length; shelves++) {
-    const limit = Math.max(widest, total / shelves)
-    const layout = shelfPlacements(boxes, horizontal, limit, gap, shelfGap)
-    if (!layout.height) continue
-    const cross = horizontal ? layout.height : layout.width
-    const over = cross > crossLimit + 0.5 ? 1 : 0
-    const score = Math.abs(Math.log(layout.width / layout.height / WRAP_ASPECT))
-    if (!best || over < best.over || (over === best.over && score < best.score - 1e-6)) {
-      best = { ...layout, score, over }
-    }
-  }
-  if (!best) return
-
-  components.forEach((nodes, index) => {
-    const box = boxes[index]
-    const place = best.placements[index]
+  let cursor = 0
+  for (const nodes of components) {
+    const box = boundsOf(nodes)
+    const place = horizontal ? { x: 0, y: cursor } : { x: cursor, y: 0 }
     shiftNodes(nodes, originX + place.x - box.minX, originY + place.y - box.minY)
-  })
-}
-
-/** 折行后整体宽高比的目标值，接近常见屏幕 */
-const WRAP_ASPECT = 1.6
-/** 层数少于此值不折行 */
-const WRAP_MIN_BANDS = 8
-/** 超出预算这么多才折行，避免刚好超一点就切出一小段 */
-const WRAP_TOLERANCE = 1.3
-/** 每段至少占预算的比例，避免切出只有一两个节点的碎段 */
-const WRAP_MIN_SEGMENT_RATIO = 0.5
-/** 流向预算（以「节点 + 层距」为单位）：横排按列数、竖排按行数，超出才折行 */
-const WRAP_FLOW_CELLS = { horizontal: 12, vertical: 16 }
-/** 交叉轴预算的下限（以「节点 + 节点间距」为单位），少量兄弟节点不拆排 */
-const WRAP_MIN_CROSS_CELLS = 6
-
-/** 段与段之间留给换行连线和标签的距离 */
-function wrapGap(direction) {
-  return isHorizontalDir(direction) ? 120 : 160
-}
-
-/**
- * 外层的折行预算：流向上放得下固定格数就不折行，只有明显过长的流程才折。
- * 分组内部不折行，预算只给外层用。
- */
-function computeWrapBudget(nodes, direction) {
-  const horizontal = isHorizontalDir(direction)
-  const leaves = nodes.filter(node => isLayoutableNode(node) && !isGroupType(node))
-  if (!leaves.length) return null
-  const { maxWidth, maxHeight } = typicalNodeSize(leaves)
-  const { nodesep } = computeSeparations(leaves, direction)
-  const ranksep = baseRankSeparation(direction)
-  const cellFlow = (horizontal ? maxWidth : maxHeight) + ranksep
-  const cellCross = (horizontal ? maxHeight : maxWidth) + nodesep
-  const flow = WRAP_FLOW_CELLS[horizontal ? 'horizontal' : 'vertical'] * cellFlow - ranksep
-  const cross = Math.max(
-    horizontal ? flow / WRAP_ASPECT : flow * WRAP_ASPECT,
-    WRAP_MIN_CROSS_CELLS * cellCross - nodesep,
-  )
-  return { flow, cross }
+    cursor += (horizontal ? box.height : box.width) + gap
+  }
 }
 
 /**
@@ -879,147 +834,6 @@ function flowBands(units, horizontal) {
     }
   }
   return bands
-}
-
-/** 落在第 index 层之后的空隙里、被切断的连线条数 */
-function edgesAcrossGap(bands, index, bandOf, scopeEdges) {
-  let count = 0
-  for (const edge of scopeEdges) {
-    const from = bandOf.get(edge.source)
-    const to = bandOf.get(edge.target)
-    if (from == null || to == null) continue
-    if (Math.min(from, to) <= index && Math.max(from, to) > index) count++
-  }
-  return count
-}
-
-/** 在可选的层间空隙里选最接近目标位置的切点 */
-function pickCut(bands, target, allowed) {
-  const gapAt = i => (bands[i].end + bands[i + 1].start) / 2
-  let nearest = allowed[0]
-  for (const i of allowed) {
-    if (Math.abs(gapAt(i) - target) < Math.abs(gapAt(nearest) - target)) nearest = i
-  }
-  return nearest
-}
-
-function median(values) {
-  const sorted = [...values].sort((a, b) => a - b)
-  const middle = Math.floor(sorted.length / 2)
-  return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2
-}
-
-/** 在 1..maxCount 段里选折行后整体最接近目标宽高比的段数（段间距计入交叉轴） */
-function aspectSegmentCount(length, crossLength, horizontal, maxCount, gap) {
-  let best = 1
-  let bestScore = Infinity
-  for (let count = 1; count <= maxCount; count++) {
-    const flowSize = length / count
-    const crossSize = count * crossLength + (count - 1) * gap
-    const ratio = horizontal ? flowSize / crossSize : crossSize / flowSize
-    const score = Math.abs(Math.log(ratio / WRAP_ASPECT))
-    if (score < bestScore) {
-      best = count
-      bestScore = score
-    }
-  }
-  return best
-}
-
-/**
- * 长链折行：Dagre 排成一条后，流向长度明显超出预算时按层切成几段，每段平移回起点并沿交叉轴错开。
- * 横排超长换到下一行，竖排超长换到下一列，每段仍沿原方向走。
- * 只在仅有一条连线跨过的空隙切，找不到这样的空隙就不折行，宁可保持一条长链。
- * 段数在预算段数以内选最接近目标宽高比的；各段按主链中心等距排开，主链落在同一组参考线上。
- * 折行时返回最后一段的节点，未折行返回 null。
- */
-function wrapLongFlow(units, scopeEdges, direction, budget) {
-  if ((direction !== 'LR' && direction !== 'TB') || !budget?.flow) return null
-  const horizontal = isHorizontalDir(direction)
-  const bands = flowBands(units, horizontal)
-  if (bands.length < WRAP_MIN_BANDS) return null
-
-  const origin = bands[0].start
-  const length = bands[bands.length - 1].end - origin
-  if (length <= budget.flow * WRAP_TOLERANCE) return null
-  const gap = wrapGap(direction)
-  const maxCount = Math.min(Math.ceil(length / budget.flow), bands.length)
-  const box = boundsOf(units)
-  const count = aspectSegmentCount(length, horizontal ? box.height : box.width, horizontal, maxCount, gap)
-  if (count < 2) return null
-  const minSegment = budget.flow * WRAP_MIN_SEGMENT_RATIO
-
-  const bandOf = new Map()
-  bands.forEach((band, index) => {
-    for (const node of band.nodes) bandOf.set(node.id, index)
-  })
-  const clean = new Set()
-  for (let j = 0; j < bands.length - 1; j++) {
-    if (edgesAcrossGap(bands, j, bandOf, scopeEdges) <= 1) clean.add(j)
-  }
-
-  const end = bands[bands.length - 1].end
-  const cuts = []
-  for (let i = 1; i < count; i++) {
-    const last = cuts.length ? cuts[cuts.length - 1] : -1
-    const segmentStart = last < 0 ? origin : bands[last + 1].start
-    const allowed = []
-    for (let j = last + 1; j < bands.length - 1; j++) {
-      if (!clean.has(j)) continue
-      if (bands[j].end - segmentStart < minSegment) continue
-      if (end - bands[j + 1].start < minSegment * (count - i)) continue
-      allowed.push(j)
-    }
-    if (!allowed.length) break
-    const target = segmentStart + (end - segmentStart) / (count - i + 1)
-    cuts.push(pickCut(bands, target, allowed))
-  }
-  if (!cuts.length) return null
-
-  const segments = []
-  let from = 0
-  for (const cut of [...cuts, bands.length - 1]) {
-    segments.push(bands.slice(from, cut + 1).flatMap(band => band.nodes))
-    from = cut + 1
-  }
-
-  const mainNodes = new Set()
-  for (const key of mainChainEdges(units, scopeEdges)) {
-    for (const id of key.split('\0')) mainNodes.add(id)
-  }
-  const crossAxisMin = horizontal ? 'minY' : 'minX'
-  const crossAxisSize = horizontal ? 'height' : 'width'
-  const metrics = segments.map((nodes) => {
-    const main = nodes.filter(node => mainNodes.has(node.id))
-    const center = median((main.length ? main : nodes).map(node => crossCenter(node, horizontal)))
-    const segmentBox = boundsOf(nodes)
-    const crossMin = segmentBox[crossAxisMin]
-    return {
-      nodes,
-      center,
-      lead: center - crossMin,
-      trail: crossMin + segmentBox[crossAxisSize] - center,
-    }
-  })
-  const stride = Math.max(...metrics.map(item => item.lead))
-    + Math.max(...metrics.map(item => item.trail))
-    + gap
-
-  const flowAxis = horizontal ? 'x' : 'y'
-  const crossAxis = horizontal ? 'y' : 'x'
-  const baseCenter = metrics[0].center
-  metrics.forEach((item, index) => {
-    const flowShift = origin - Math.min(...item.nodes.map(node => rankLead(node, horizontal)))
-    const crossShift = index ? baseCenter + index * stride - item.center : 0
-    for (const node of item.nodes) {
-      node.position = {
-        ...node.position,
-        [flowAxis]: (node.position?.[flowAxis] ?? 0) + flowShift,
-        [crossAxis]: (node.position?.[crossAxis] ?? 0) + crossShift,
-      }
-    }
-  })
-  return segments[segments.length - 1]
 }
 
 function edgeKey(edge) {
@@ -1162,7 +976,87 @@ function straightenJogs(units, scopeEdges, direction, nodesep) {
   }
 }
 
-function layoutGraph(units, scopeEdges, direction, marginx, marginy, budget) {
+/** 同一源节点的出边：按把手首次出现的顺序归组，组内保持原有边的顺序 */
+function orderedOutEdges(scopeEdges) {
+  const outs = new Map()
+  for (const edge of scopeEdges) {
+    if (!outs.has(edge.source)) outs.set(edge.source, [])
+    outs.get(edge.source).push(edge)
+  }
+  for (const [source, list] of outs) {
+    const handleRank = new Map()
+    for (const edge of list) {
+      const handle = edge.sourceHandle ?? null
+      if (!handleRank.has(handle)) handleRank.set(handle, handleRank.size)
+    }
+    outs.set(source, list
+      .map((edge, index) => ({ edge, index }))
+      .sort((a, b) => handleRank.get(a.edge.sourceHandle ?? null) - handleRank.get(b.edge.sourceHandle ?? null)
+        || a.index - b.index)
+      .map(item => item.edge))
+  }
+  return outs
+}
+
+/**
+ * 从入口做 DFS，把指向递归栈中节点的边记为回边（回环）。
+ * 入口取入度为 0 的节点，按画布位置从流向起点排起；整段都在环里时取最靠前的节点。
+ * 返回顺向边、回边，以及 DFS 访问顺序。
+ */
+function splitBackEdges(units, scopeEdges, direction) {
+  const ids = new Set(units.map(node => node.id))
+  const edges = scopeEdges.filter(edge => ids.has(edge.source) && ids.has(edge.target))
+  const outs = orderedOutEdges(edges)
+  const inDegree = new Map(units.map(node => [node.id, 0]))
+  for (const edge of edges) inDegree.set(edge.target, inDegree.get(edge.target) + 1)
+
+  const horizontal = isHorizontalDir(direction)
+  const flowAxis = horizontal ? 'x' : 'y'
+  const crossAxis = horizontal ? 'y' : 'x'
+  const byPosition = [...units].sort((a, b) =>
+    (a.position?.[flowAxis] ?? 0) - (b.position?.[flowAxis] ?? 0)
+    || (a.position?.[crossAxis] ?? 0) - (b.position?.[crossAxis] ?? 0))
+  const entries = byPosition.filter(node => inDegree.get(node.id) === 0)
+
+  const back = new Set()
+  const state = new Map()
+  const order = []
+  const visit = (rootId) => {
+    if (state.has(rootId)) return
+    state.set(rootId, 1)
+    order.push(rootId)
+    const stack = [{ id: rootId, next: 0 }]
+    while (stack.length) {
+      const frame = stack[stack.length - 1]
+      const list = outs.get(frame.id) || []
+      if (frame.next >= list.length) {
+        state.set(frame.id, 2)
+        stack.pop()
+        continue
+      }
+      const edge = list[frame.next++]
+      const seen = state.get(edge.target)
+      if (seen === 1) {
+        back.add(edge)
+      } else if (!seen) {
+        state.set(edge.target, 1)
+        order.push(edge.target)
+        stack.push({ id: edge.target, next: 0 })
+      }
+    }
+  }
+  for (const node of entries) visit(node.id)
+  // 剩下的都在环里，从最靠前的未访问节点继续
+  for (const node of byPosition) visit(node.id)
+
+  return {
+    forward: scopeEdges.filter(edge => !back.has(edge)),
+    back: scopeEdges.filter(edge => back.has(edge)),
+    order,
+  }
+}
+
+function layoutGraph(units, scopeEdges, direction, marginx, marginy, options = {}) {
   if (!units.length) return false
   const { maxFanout } = getDegrees(scopeEdges)
   const graph = new dagre.graphlib.Graph()
@@ -1180,19 +1074,27 @@ function layoutGraph(units, scopeEdges, direction, marginx, marginy, budget) {
   const horizontal = isHorizontalDir(direction)
   const titleTop = node => (isGroupType(node) ? GROUP_TITLE_OVERHANG : 0)
   const titleBottom = node => (horizontal && isGroupType(node) ? GROUP_TITLE_OVERHANG : 0)
-  for (const node of units) {
+  // Dagre 的初始排序依赖插入顺序：按 DFS 顺序插节点、按出口顺序插边，分支左右顺序每次一致
+  const byId = new Map(units.map(node => [node.id, node]))
+  const order = options.order?.filter(id => byId.has(id)) ?? []
+  const inserted = new Set(order)
+  const orderedUnits = [...order.map(id => byId.get(id)), ...units.filter(node => !inserted.has(node.id))]
+  for (const node of orderedUnits) {
     const { w, h } = getNodeSize(node)
     graph.setNode(node.id, { width: w, height: h + titleTop(node) + titleBottom(node) })
   }
   const weights = edgeWeights(units, scopeEdges)
-  for (const edge of scopeEdges) {
-    graph.setEdge(edge.source, edge.target, { weight: weights.get(edgeKey(edge)) ?? 1, minlen: 1 })
+  const outs = orderedOutEdges(scopeEdges)
+  for (const node of orderedUnits) {
+    for (const edge of outs.get(node.id) || []) {
+      graph.setEdge(edge.source, edge.target, { weight: weights.get(edgeKey(edge)) ?? 1, minlen: 1 })
+    }
   }
 
   try {
     dagre.layout(graph)
   } catch (error) {
-    console.warn('[layout] dagre.layout failed, preserving node positions', error)
+    console.warn('[applyLayout] dagre.layout failed, preserving node positions', error)
     return false
   }
 
@@ -1210,7 +1112,7 @@ function layoutGraph(units, scopeEdges, direction, marginx, marginy, budget) {
   straightenJogs(units, scopeEdges, direction, nodesep)
   respaceRanks(units, scopeEdges, direction)
   alignRankStart(units, direction)
-  splitWideRanks(units, scopeEdges, direction, budget, nodesep)
+  if (options.splitWide) splitWideRanks(units, scopeEdges, direction, nodesep)
   return true
 }
 
@@ -1240,15 +1142,12 @@ function findSharedSinks(units, scopeEdges) {
 }
 
 /**
- * 收尾节点排在主体之后（竖排在下方、横排在右侧），多个时并排。
- * 交叉轴上对齐主链结束的那一段（折行后的最后一段），汇过来的线沿各列旁边走到尽头再汇合；
- * 放在整体中间时，前几段的线要穿过末段的折返线。
+ * 收尾节点排在主体之后（竖排在下方、横排在右侧），多个时并排，交叉轴上对齐主体中线。
  */
-function placeSharedSinks(sinks, core, coreEdges, sinkEdges, direction, tail = core) {
+function placeSharedSinks(sinks, core, coreEdges, sinkEdges, direction) {
   const horizontal = isHorizontalDir(direction)
   const reversed = direction === 'BT' || direction === 'RL'
   const box = boundsOf(core)
-  const tailBox = boundsOf(tail)
   const { nodesep } = computeSeparations(core, direction, getDegrees(coreEdges).maxFanout)
   // 只有最后一层直连收尾节点的边，标签落在这段空隙里
   const bands = flowBands(core, horizontal)
@@ -1263,11 +1162,11 @@ function placeSharedSinks(sinks, core, coreEdges, sinkEdges, direction, tail = c
   const sizes = sinks.map(node => getNodeSize(node))
   const crossTotal = sizes.reduce((sum, size) => sum + (horizontal ? size.h : size.w), 0)
     + nodesep * (sinks.length - 1)
-  const tailCrossMin = horizontal ? tailBox.minY : tailBox.minX
-  const tailCrossSize = horizontal ? tailBox.height : tailBox.width
+  const coreCrossMin = horizontal ? box.minY : box.minX
+  const coreCrossSize = horizontal ? box.height : box.width
   const coreFlowMin = horizontal ? box.minX : box.minY
   const coreFlowEnd = coreFlowMin + (horizontal ? box.width : box.height)
-  let cross = tailCrossMin + (tailCrossSize - crossTotal) / 2
+  let cross = coreCrossMin + (coreCrossSize - crossTotal) / 2
   sinks.forEach((node, index) => {
     const { w, h } = sizes[index]
     const depth = horizontal ? w : h
@@ -1278,37 +1177,37 @@ function placeSharedSinks(sinks, core, coreEdges, sinkEdges, direction, tail = c
 }
 
 /**
- * Dagre 排版 + 长链折行。共用收尾节点先不参与：连向它的长线会让 Dagre 把主链一层层挤歪，
- * 折行时又让每个层间空隙都显得「被跨过」。主体排好、折好后再把收尾节点放到尽头。
+ * Dagre 排版，不折行。回边（回环）不参与分层，主线和循环体排直，回连交给连线路由在外侧绕。
+ * 共用收尾节点也先不参与：连向它的长线会让 Dagre 把主链一层层挤歪，主体排好后再放到尽头。
  */
-function layoutScopeUnits(units, scopeEdges, direction, marginx, marginy, budget) {
-  const sinks = findSharedSinks(units, scopeEdges)
+function layoutScopeUnits(units, scopeEdges, direction, marginx, marginy, splitWide = false) {
+  const { forward, order } = splitBackEdges(units, scopeEdges, direction)
+  const sinks = findSharedSinks(units, forward)
   if (sinks.length) {
     const sinkIds = new Set(sinks.map(node => node.id))
     const core = units.filter(node => !sinkIds.has(node.id))
-    const coreEdges = scopeEdges.filter(edge => !sinkIds.has(edge.source) && !sinkIds.has(edge.target))
-    if (core.length && layoutGraph(core, coreEdges, direction, marginx, marginy, budget)) {
-      const tail = wrapLongFlow(core, coreEdges, direction, budget)
-      const sinkEdges = scopeEdges.filter(edge => sinkIds.has(edge.target))
-      placeSharedSinks(sinks, core, coreEdges, sinkEdges, direction, tail ?? core)
+    const coreEdges = forward.filter(edge => !sinkIds.has(edge.source) && !sinkIds.has(edge.target))
+    if (core.length && layoutGraph(core, coreEdges, direction, marginx, marginy, { order, splitWide })) {
+      const sinkEdges = forward.filter(edge => sinkIds.has(edge.target))
+      placeSharedSinks(sinks, core, coreEdges, sinkEdges, direction)
       return true
     }
   }
-  if (!layoutGraph(units, scopeEdges, direction, marginx, marginy, budget)) return false
-  wrapLongFlow(units, scopeEdges, direction, budget)
-  return true
+  return layoutGraph(units, forward, direction, marginx, marginy, { order, splitWide })
 }
 
-function layoutDirectChildren(scopeId, children, edges, direction, hierarchy, budget) {
+function layoutDirectChildren(scopeId, children, edges, direction, hierarchy) {
   const units = children.filter(isLayoutableNode)
   if (!units.length) return
 
   const scopeEdges = getScopeEdges(scopeId, units, edges, hierarchy)
   const marginx = scopeId == null ? 45 : 0
   const marginy = scopeId == null ? 24 : 0
+  // 宽扇出拆排只在外层做，分组内部保持 Dagre 的结果
+  const splitWide = scopeId == null
   const components = connectedComponents(units, scopeEdges)
   if (components.length <= 1) {
-    layoutScopeUnits(units, scopeEdges, direction, marginx, marginy, budget)
+    layoutScopeUnits(units, scopeEdges, direction, marginx, marginy, splitWide)
     return
   }
 
@@ -1319,12 +1218,12 @@ function layoutDirectChildren(scopeId, children, edges, direction, hierarchy, bu
   for (const component of ordered) {
     const ids = new Set(component.nodes.map(node => node.id))
     const componentEdges = scopeEdges.filter(edge => ids.has(edge.source) && ids.has(edge.target))
-    if (layoutScopeUnits(component.nodes, componentEdges, direction, 0, 0, budget)) {
+    if (layoutScopeUnits(component.nodes, componentEdges, direction, 0, 0, splitWide)) {
       laidOut.push(component.nodes)
     }
   }
   const gap = isHorizontalDir(direction) ? 72 : 64
-  packComponents(laidOut, direction, marginx, marginy, gap, budget)
+  packComponents(laidOut, direction, marginx, marginy, gap)
 }
 
 /** 组内回连所需的留白，与默认的 GROUP_PAD_* 逐边取大 */
@@ -1453,6 +1352,16 @@ function anchorDecorations(decorations, units) {
  * 跟着锚点节点移动；落在节点上时沿交叉轴（竖排左右、横排上下）挪到最近的空位，
  * 不挡主链，也不会被推过一整列节点。
  */
+/** 节点会按 Dagre 重排到新坐标，批注先跟回原来旁边的节点，避免分组补边距后一轮轮下移。 */
+function restoreAnchoredPositions(anchors) {
+  for (const item of anchors) {
+    item.node.position = {
+      x: (item.anchor.position?.x ?? 0) + item.dx,
+      y: (item.anchor.position?.y ?? 0) + item.dy,
+    }
+  }
+}
+
 function placeDecorations(anchors, units, direction) {
   if (!anchors.length) return 0
   const horizontal = isHorizontalDir(direction)
@@ -1490,54 +1399,129 @@ function placeDecorations(anchors, units, direction) {
   return moved
 }
 
-/** 组内批注靠左：顶边与组内节点对齐，高度至少铺满节点列，分组包络再把留白算进去。 */
+const COMMENT_TYPES = new Set(['comment', 'notes'])
+
+function isCommentDecoration(node) {
+  return COMMENT_TYPES.has(node?.type)
+}
+
+function contentBounds(rects) {
+  const x = Math.min(...rects.map(rect => rect.x))
+  const y = Math.min(...rects.map(rect => rect.y))
+  const right = Math.max(...rects.map(rect => rect.x + rect.w))
+  const bottom = Math.max(...rects.map(rect => rect.y + rect.h))
+  return { x, y, w: right - x, h: bottom - y, right, bottom }
+}
+
+/**
+ * 在节点外框内部，从左上角找第一块不压住节点的位置。
+ * 不放到外框左边。放不下时返回 null，改由外侧落位，避免盖住节点。
+ */
+function upperLeftInside(width, height, bounds, isFree) {
+  const x0 = bounds.x
+  const y0 = bounds.y
+  const limitX = Math.max(x0, bounds.right - width)
+  const limitY = Math.max(y0, bounds.bottom - height)
+  if (isFree(x0, y0)) {
+    return { x: x0, y: y0 }
+  }
+  const step = 24
+  for (let y = y0; y <= limitY; y += step) {
+    for (let x = x0; x <= limitX; x += step) {
+      if (isFree(x, y)) {
+        return { x, y }
+      }
+    }
+  }
+  return null
+}
+
+/**
+ * 节点范围里放不下时，贴着外框外侧放：竖排在右侧，横排在下侧。
+ * 多条批注沿流程方向接着排，分组会随之撑开。
+ */
+function placeOutsideContent(width, height, bounds, occupied, direction) {
+  const horizontal = isHorizontalDir(direction)
+  let x = horizontal ? bounds.x : bounds.right + DECORATION_GAP
+  let y = horizontal ? bounds.bottom + DECORATION_GAP : bounds.y
+  let guard = 0
+  while (guard < 16) {
+    const blocked = occupied.filter(box => rectsOverlap({ x, y, w: width, h: height }, box, DECORATION_GAP))
+    if (!blocked.length) break
+    if (horizontal) {
+      x = Math.max(...blocked.map(box => box.x + box.w)) + DECORATION_GAP
+    } else {
+      y = Math.max(...blocked.map(box => box.y + box.h)) + DECORATION_GAP
+    }
+    guard += 1
+  }
+  return { x: Math.round(x), y: Math.round(y) }
+}
+
+/**
+ * 批注优先放进节点范围左上角已有的空白，多条时继续往右下找。
+ * 空白放不下时放到节点外侧，不盖住节点，也不伸出外框的左边和上边。
+ */
+function placeCommentsInBlank(comments, units, blockers, direction = 'TB') {
+  if (!comments.length || !units.length) return 0
+  let moved = 0
+  const occupied = [...units.map(nodeRect), ...blockers.map(nodeRect)]
+  const bounds = contentBounds(units.map(nodeRect))
+  const ordered = [...comments].sort((a, b) => (
+    (a.position?.y ?? 0) - (b.position?.y ?? 0)
+    || (a.position?.x ?? 0) - (b.position?.x ?? 0)
+    || String(a.id).localeCompare(String(b.id))
+  ))
+  for (const node of ordered) {
+    const { w, h } = getNodeSize(node, nodeSizeFallback(node))
+    const isFree = (x, y) => {
+      const probe = { x, y, w, h }
+      return !occupied.some(box => rectsOverlap(probe, box, DECORATION_GAP))
+    }
+    const spot = upperLeftInside(w, h, bounds, isFree)
+      ?? placeOutsideContent(w, h, bounds, occupied, direction)
+    const x = Math.round(spot.x)
+    const y = Math.round(spot.y)
+    if ((node.position?.x ?? 0) !== x || (node.position?.y ?? 0) !== y) moved += 1
+    node.position = { x, y }
+    occupied.push(nodeRect(node))
+  }
+  return moved
+}
+
+/** 组内文字靠左：顶边与组内节点对齐，宽高保持原样。 */
 function placeGroupCommentsLeft(decorations, units) {
   if (!decorations.length || !units.length) return 0
+  let moved = 0
   let minX = Infinity
   let minY = Infinity
-  let maxBottom = -Infinity
   for (const unit of units) {
     const rect = nodeRect(unit)
     if (rect.x < minX) minX = rect.x
     if (rect.y < minY) minY = rect.y
-    const bottom = rect.y + rect.h
-    if (bottom > maxBottom) maxBottom = bottom
-  }
-  const columnHeight = Math.max(0, maxBottom - minY)
-  const sizes = decorations.map(node => getNodeSize(node, nodeSizeFallback(node)))
-  const heights = sizes.map(size => size.h)
-  const gapTotal = DECORATION_GAP * Math.max(0, decorations.length - 1)
-  const stack = heights.reduce((sum, height) => sum + height, 0) + gapTotal
-  if (columnHeight > stack && heights.length) {
-    heights[heights.length - 1] += columnHeight - stack
   }
   let cursorY = minY
-  let moved = 0
-  decorations.forEach((node, index) => {
-    const width = sizes[index].w
-    const height = Math.max(50, Math.round(heights[index]))
-    const x = minX - DECORATION_GAP - width
-    if ((node.position?.x ?? 0) !== x || (node.position?.y ?? 0) !== cursorY || Math.abs(sizes[index].h - height) >= 1) {
-      moved += 1
-    }
-    setNodeSize(node, width, height, true)
+  for (const node of decorations) {
+    const { w, h } = getNodeSize(node, nodeSizeFallback(node))
+    const x = minX - DECORATION_GAP - w
+    if ((node.position?.x ?? 0) !== x || (node.position?.y ?? 0) !== cursorY) moved += 1
     node.position = { x, y: cursorY }
-    cursorY += height + DECORATION_GAP
-  })
+    cursorY += h + DECORATION_GAP
+  }
   return moved
 }
 
 /**
  * 按作用域递归布局：每个 group 先递归布局直接子节点，再作为代理参与父层 Dagre。
- * 组内批注靠左贴在节点旁边，再被 group 包围。组外批注跟随离它最近的节点，重叠时往外让开。
+ * 批注优先放进节点范围里的空白；放不下就贴在节点外侧，分组随之撑开。文字节点仍跟随锚点或靠左。
  * 分组只改尺寸和子节点坐标，自身 position 不变。
- * 折行预算只给外层：分组内部不折行、不拆排，避免组内折一次、外层再折一次拼成网格。
+ * 各层都不折行，回边不参与分层；宽扇出拆排只在外层做。
  */
 function createScopeLayout(list, edgeList, direction, stats) {
   const hierarchy = createHierarchy(list)
   const visited = new Set()
 
-  function layoutScope(scopeId, budget = null) {
+  function layoutScope(scopeId) {
     if (scopeId && visited.has(scopeId)) return
     if (scopeId) visited.add(scopeId)
     const children = hierarchy.childrenByParent.get(scopeId || null) || []
@@ -1546,15 +1530,20 @@ function createScopeLayout(list, edgeList, direction, stats) {
     }
     const layoutable = children.filter(isLayoutableNode)
     const decorations = children.filter(node => !isLayoutableNode(node))
-    const anchors = scopeId ? [] : anchorDecorations(decorations, layoutable)
-    layoutDirectChildren(scopeId, children, edgeList, direction, hierarchy, budget)
+    const comments = decorations.filter(isCommentDecoration)
+    const others = decorations.filter(node => !isCommentDecoration(node))
+    const anchors = scopeId ? [] : anchorDecorations(others, layoutable)
+    const commentAnchors = anchorDecorations(comments, layoutable)
+    layoutDirectChildren(scopeId, children, edgeList, direction, hierarchy)
+    restoreAnchoredPositions(commentAnchors)
+    const scopeEdges = getScopeEdges(scopeId, layoutable, edgeList, hierarchy)
     stats.decorations += scopeId
-      ? placeGroupCommentsLeft(decorations, layoutable)
+      ? placeGroupCommentsLeft(others, layoutable)
       : placeDecorations(anchors, layoutable, direction)
+    stats.decorations += placeCommentsInBlank(comments, layoutable, others, direction)
     if (scopeId) {
       const group = hierarchy.byId.get(scopeId)
       if (group) {
-        const scopeEdges = getScopeEdges(scopeId, layoutable, edgeList, hierarchy)
         fitGroupToChildren(group, children, groupPadding(layoutable, scopeEdges, direction))
         stats.groups += 1
       }
@@ -1577,7 +1566,7 @@ function doApplyLayout(
   const list = nodes
   const edgeList = Array.isArray(edges) ? edges : []
   const { layoutScope } = createScopeLayout(list, edgeList, direction, stats)
-  layoutScope(null, computeWrapBudget(list, direction))
+  layoutScope(null)
   for (const node of list) {
     setHandlePositions(node, direction, sourcePosition, targetPosition)
   }
@@ -1614,7 +1603,7 @@ function groupDescendants(groupId, hierarchy) {
 /**
  * 只重新排列某个分组（含嵌套子分组）内的节点：分组左上角不动，尺寸按内容重算。
  * 分组外的节点不动；祖先分组装不下时只向右、向下放大，不缩小也不移动。
- * 分组内部不折行，与整图自动布局时该分组的样子一致。
+ * 与整图自动布局时该分组的样子一致。
  */
 function doApplyGroupLayout(
   nodes,
@@ -1794,7 +1783,7 @@ function main() {
   const moved = flow.nodes.filter(node => before.get(node.id) !== snapshot(node)).length
   const scope = args.group != null ? `分组 ${args.group}` : `${flow.nodes.length} 个节点`
   const summary = `layout ${direction}: ${scope}，${moved} 个有变化，`
-    + `${stats.groups} 个分组重算尺寸，${stats.decorations} 张批注让开`
+    + `${stats.groups} 个分组重算尺寸，${stats.decorations} 张批注挪动`
 
   if (args.check) {
     if (moved || directionChanged) {

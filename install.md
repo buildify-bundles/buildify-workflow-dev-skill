@@ -60,18 +60,24 @@ description: >-
 | `DEST` 现状 | 做法 |
 |---|---|
 | 不存在 | 克隆，见下 |
-| 是 git 仓库，origin 是 GitHub 或 Gitee 那两个地址（含 `git@` 形式） | `git -C "$DEST" pull --ff-only`；失败（有本地改动、分叉）就按下一行处理 |
+| 是 git 仓库，origin 是 GitHub 或 Gitee 那两个地址（含 `git@` 形式） | GitHub：`git -C "$DEST" pull --ff-only`；Gitee：`git -C "$DEST" -c protocol.version=1 pull --ff-only`。失败（有本地改动、分叉，或报 `protocol` / `unsupported`）就按下一行处理 |
 | 是本 skill 的旧副本（`SKILL.md` 里 `name: buildify-workflow-dev`），但不是 git 仓库或 pull 失败 | 整个目录改名为 `"$DEST.bak-$(date +%Y%m%d%H%M%S)"` 备份，再重新克隆，汇报里写备份路径 |
 | 是 git 仓库但 origin 是别的地址，或里面是别的东西 | **停下问用户**，不要覆盖，也不要改 remote |
 
-克隆：有 `git` 就先 GitHub，失败或超时再 Gitee：
+克隆只用 `https://` 地址，不要用 `git://` 或 `git@gitee.com:`。Gitee 不支持 git 协议 v2，克隆时加 `-c protocol.version=1`（只对这一条命令生效，不要改用户的 git 配置）。有 `git` 就先 GitHub 浅克隆，失败再 Gitee 浅克隆，浅克隆还失败就去掉 `--depth 1` 完整克隆一次。每次重试前，`$DEST` 存在但里面没有 `SKILL.md` 时，先删掉这个半成品目录：
 
 ```bash
+[ -d "$DEST" ] && [ ! -f "$DEST/SKILL.md" ] && rm -rf "$DEST"
 git clone --depth 1 https://github.com/buildify-bundles/buildify-workflow-dev-skill.git "$DEST" \
-  || git clone --depth 1 https://gitee.com/buildify/buildify-workflow-dev-skill.git "$DEST"
+  || { [ -d "$DEST" ] && [ ! -f "$DEST/SKILL.md" ] && rm -rf "$DEST"
+       git -c protocol.version=1 clone --depth 1 https://gitee.com/buildify/buildify-workflow-dev-skill.git "$DEST"; } \
+  || { [ -d "$DEST" ] && [ ! -f "$DEST/SKILL.md" ] && rm -rf "$DEST"
+       git -c protocol.version=1 clone https://gitee.com/buildify/buildify-workflow-dev-skill.git "$DEST"; }
 ```
 
-没有 `git` 就下载压缩包，不要让用户去装 git：
+报错里出现 `protocol`、`unsupported`，或者实际请求的地址被改写成 `git://` / `git@`（用户 git 配置里有 `url.*.insteadOf`）时，不改用户的 git 配置，直接走下面的下载。
+
+没有 `git`，或上面三次克隆都失败时，先下 GitHub 压缩包，不要让用户去装 git：
 
 ```bash
 mkdir -p "$DEST" && curl -fsSL --max-time 60 \
@@ -79,15 +85,26 @@ mkdir -p "$DEST" && curl -fsSL --max-time 60 \
   | tar -xz -C "$DEST" --strip-components 1
 ```
 
-这样装的副本以后更新时，就按「旧副本」那一行备份后重装。克隆后若多了一层 `buildify-workflow-dev-skill/`，把内容挪到 `DEST` 根下。
+压缩包也下不来，就从 Gitee 逐个下载文件。不要下 Gitee 的 zip，匿名下载常常要求登录：
+
+```bash
+BASE=https://gitee.com/buildify/buildify-workflow-dev-skill/raw/main
+for f in SKILL.md README.md install.md reference/cli.md reference/flow-json.md reference/expressions.md \
+         reference/recipes.md reference/comment-node.md reference/report.md reference/missing-bundle.md \
+         scripts/layout.mjs scripts/check.mjs scripts/vendor/dagre.min.js scripts/vendor/dagre.LICENSE; do
+  mkdir -p "$DEST/$(dirname "$f")" && curl -fsSL --max-time 60 "$BASE/$f" -o "$DEST/$f" || echo "下载失败 $f"
+done
+```
+
+压缩包和逐个文件装出来的副本以后更新时，就按「旧副本」那一行备份后重装。克隆后若多了一层 `buildify-workflow-dev-skill/`，把内容挪到 `DEST` 根下。
 
 ## 3. 校验文件
 
 ```bash
 grep -E '^name: buildify-workflow-dev$' "$DEST/SKILL.md"
 for f in reference/cli.md reference/flow-json.md reference/expressions.md reference/recipes.md \
-         reference/comment-node.md reference/report.md scripts/layout.mjs scripts/check.mjs \
-         scripts/vendor/dagre.min.js; do test -f "$DEST/$f" || echo "缺少 $f"; done
+         reference/comment-node.md reference/report.md reference/missing-bundle.md \
+         scripts/layout.mjs scripts/check.mjs scripts/vendor/dagre.min.js; do test -f "$DEST/$f" || echo "缺少 $f"; done
 ```
 
 有缺失就换另一个来源重取一次；还缺就把路径和 `ls` 结果告诉用户，不要假装成功。
@@ -153,10 +170,33 @@ buildify --json key test
 | 项 | 内容 |
 | --- | --- |
 | 安装位置 | `/Users/me/.cursor/skills/buildify-workflow-dev`（新装 / 已更新 / 旧副本已备份到 …） |
-| 来源 | GitHub git / Gitee git / GitHub 压缩包 |
+| 来源 | GitHub git / Gitee git / GitHub 压缩包 / Gitee 逐个文件 |
 | buildify CLI | 已安装（uv tool）/ 已是最新 / 失败：原因 |
 | buildify-cli 密钥 | 可用（工作区名）/ 待配置：系统设置 → API Keys → buildify-cli 密钥 |
 | Node 18+ | 可用 / 没有，编排时手算坐标 |
 | buildify-bundle-dev | 已装 / 未装，缺软件包时再装 |
 
-本机还有其他客户端时，表下加一句「还检测到 Claude Code、Trae，需要的话我也装上」。最后说下一步：新开对话，提到编排流程或输入 `/buildify-workflow-dev`（当前对话可能还没刷新技能列表）。不要在这时开始编流程。
+本机还有其他客户端时，表下加一句「还检测到 Claude Code、Trae，需要的话我也装上」。
+
+表后接一段使用说明，照下面的模板写，不要省略。密钥待配置时把第一句换成「先把 buildify-cli 密钥发给我，然后就可以开始」。不要在这时开始编流程。
+
+```markdown
+## 怎么开始用
+
+新开一个对话（当前对话可能还没刷新技能列表），直接用中文说想要什么流程，或者输入 `/buildify-workflow-dev` 再写需求。比如：
+
+- 「做一个 HTTP 接口 `GET /orders/:id`，查 MySQL 订单表返回 JSON」
+- 「每小时把新订单同步到飞书多维表格，失败发飞书告警」
+- 「收微信支付回调，验签后更新订单状态」
+- 「打开『订单查询』这条流程，加一个按手机号查询的分支」
+- 「把『订单查询』试跑一下，没问题就发布」
+
+接下来我会：
+
+1. 查本工作区装了哪些软件包和节点，生成画布并自动排版，校验后保存草稿
+2. 只问还缺的：项目、服务器、访问凭证，都是点选
+3. 试跑，HTTP 接口会先测服务器访问地址通不通
+4. 确认版本号后发布，用表格汇报结果和访问地址
+
+默认：画布竖排；不写接口文档和批注（接口的访问地址写在汇报里）；只有特别复杂的流程才按功能模块分组；试跑通过后发布。想改就在需求里说，比如「横排」「写一份接口文档」「按模块分组」「只保存草稿」。没有对应节点时，我会先给出开发方案，你确认后自动开发、发布，再接着编排。
+```

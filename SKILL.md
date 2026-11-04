@@ -48,7 +48,7 @@ description: >-
 步骤补充：
 
 - **2–5 缺什么才问什么**，同一次提问里问完。缺口没回复前不要 `workflow create` / `save-draft` / `test-run` / `deploy`。
-- **4**：没有对应软件包或节点时停下编排，按「环境里没有对应节点」给方案、确认、开发发布，然后从这一步继续。`bundle doc` 只在参数含义不清时读。
+- **4**：没有对应软件包或节点时停下编排，按「环境里没有对应节点」给方案、确认、开发发布，然后从这一步继续。`bundle doc` 只在参数含义不清时读。目录用 `bundle nodes -b 包名 -V 版本 --json` 拉，输出存到临时文件（如 `/tmp/buildify-catalog/<包名>@<版本>.nodes.json`），同一次拉的 `bundle node-relations -b 包名 -n 节点` 存成 `<包名>@<版本>.<节点>.relations.json`，文件名里的版本就是 `-V` 的值，包名里的 `/` 换成 `__`。只把要用的字段读进对话，不要整份打印。
 - **8**：改已有就打开该草稿再 save-draft。新建用用户给的名称，没给就用展示过的建议名。
 - **9**：凭证选了「使用时再选」则停在草稿，不试跑。用户选了「只保存草稿」可以试跑，但不进入步骤 10。
 - **10**：只在试跑通过、且用户没选「只保存草稿」时进行。见「发布与汇报」。
@@ -58,9 +58,9 @@ description: >-
 | 场景 | 读 |
 |---|---|
 | 命令、参数、退出码、推荐循环、save-draft 冲突、改服务器、改/删凭证、删除、部署记录、历史版本 | [reference/cli.md](reference/cli.md) |
-| 画布 JSON 字段、排版脚本、边、批注、分组、多段并列、校验顺序 | [reference/flow-json.md](reference/flow-json.md) |
+| 画布 JSON 字段、排版脚本、边、批注、分组、多段并列、校验顺序 | [reference/flow-json.md](reference/flow-json.md)。有 Node 时只读「顶层」「排版脚本」「节点（执行相关）」「边」，要分组再读「节点分组」的字段表；「手算兜底」「多段并列」里的坐标表和示例只在没有 Node 时读 |
 | 参数里的表达式（按 `uiComponent`）、JS 代码注释、飞书卡片与失败原因 | [reference/expressions.md](reference/expressions.md) |
-| 批注节点字段、组内功能说明、HTTP 接口批注正文 | [reference/comment-node.md](reference/comment-node.md) |
+| 用户要求时才加的批注：字段、功能说明、HTTP 接口文档正文 | [reference/comment-node.md](reference/comment-node.md)（用户没要求批注或接口文档时不读） |
 | 常见骨架：Webhook 应答、定时落库、分支复制、改已有、分组 | [reference/recipes.md](reference/recipes.md)（节点名仍须用 CLI 核实） |
 | 保存 / 试跑 / 发布后的汇报表格与状态符号 | [reference/report.md](reference/report.md) |
 | 没有软件包或缺节点：默认方案、确认模板、建包、开发发布后回来 | [reference/missing-bundle.md](reference/missing-bundle.md) |
@@ -87,14 +87,14 @@ description: >-
 - **节点 id**：每个新节点（含批注、分组框、复制出来的节点）用 `n-` + 8 位 nanoid，流程内唯一。不要用 `n1` / `trigger` 这类可读名。已有草稿的旧 id 不要改。边 `id` = `{source}_{target}`。
 - **顶层**：必写 `direction`（默认 `TB`；用户要横排才 `LR`；改已有沿用草稿）和 `errors`（先 `{}`）。
 - **节点字段**：`name` / `bundleName` / `bundleVersion` / `icon` / `label` / `isTrigger` 从 `bundle nodes` / `node-properties` 原样拷贝。**图标按节点类型逐个查目录**，不要凭名字猜（`JsFunctionNode` 是 `js.svg`，不是 `code.svg`；`HttpRequestNode` 是 `request.svg`），不要借用别的节点或软件包本身的图标，也不要写 URL。`summary` 写这颗节点在本流程里的职责，**≤8 字**（如「接收请求」「查询设备」），画布默认显示它，不要照抄目录 `summary`。
-- **坐标**：交给排版脚本。`position`、`sourcePosition` / `targetPosition`、分组框 `style` 宽高都由脚本写，不要在脚本输出后再手动挪动。组内说明写 `{0, 0}`，多段时分组框写本段粗略原点；用户另要的组外批注写在外侧。见 flow-json.md「画布排列」。
+- **坐标**：交给排版脚本。`position`、`sourcePosition` / `targetPosition`、分组框 `style` 宽高都由脚本写，不要在脚本输出后再手动挪动。多段时每段写一个粗略原点；用户要的批注写 `{0, 0}`。见 flow-json.md「画布排列」。
 - **分支**：以不交叉为准。能沿流向干净汇合才共用下游；否则各支路复制一份配置相同的节点（新 id）。不要复制触发器。
 - **循环允许，但必须有出口。** 用户要重试、轮询、等到条件满足时，从下游出口连回上游入口即可。不要为了消环拆边或复制节点。回连由控制台绕线，节点仍按主链排，不要把下游再挪到上游旁边。环上至少要有一条边离开循环（If / Switch 的另一支、失败出口、次数用尽、超时等）。所有出口都连回环内就是死循环：补上退出条件再保存，条件不清楚就问用户。
 - **边**：每两个节点之间只有一条边，`id` 固定 `{source}_{target}`，不要按出口拆成 `…_Success` / `…_Failure` 两条。接到同一下游的多个出口（如 Success+Failure）全部放进这条边的 `data.relations[]` 数组。每个 relation 必须有 `name` 和 `label`，从 `node-relations` 整份拷贝；`description` 可选，可以照目录写，也可以改写成本流程里的含义（如「查不到也继续」）。MCP 自定义关系再带 `_id` / `icon` / `mcpKind`，并同步到源节点 `data.relations`。
 - **表达式**按字段 `uiComponent` 选语法：`JsonExpressionInput` 默认整字段 `"={{msg.xxx}}"` 保留类型，要拼字符串才写 `"=前缀 {{msg.xxx}}"`（`=` 必须是第一个字符，`{{ }}` 里不运算）；`SqlEditor` 用 `#{}` / `${}`；文本及其他用 `{{ }}`。见 [expressions.md](reference/expressions.md)。
 - **JS 节点** `parameters.code` 分段并写中文注释：顶部写入参/出参，每段用 `// --- 段名 ---` 隔开。
-- **每个功能默认一个分组。** 一个功能 = 从一个触发器出发、彼此有边相连的一段。新建、重写或这次新增的功能都加，一段一个框，不论有没有 HTTP、不论一共几段。一段里的成功/失败分支仍算这一个功能，不要为分支再加框，也不要每个节点一个框。用户明确不要分组时才省略。只改参数、不改结构时，不要为了补分组去重排已有画布。组内节点必须写 `parentNode`；框的宽高和组内坐标交给脚本（标题在框内，左右留白 40，上留白 68，有回连时自动加宽）；框背景写 `groupColor: "#4a535c"`、`groupOpacity: 0.03`、`groupBorderColor: "#4a535c"`、`groupBorderStyle: "solid"`、`groupBorderWidth: 1.5`、`groupRadius: 12`。`groupLabel` 用这个功能的短名，不要固定写成某一个词。
-- **每个分组内默认一张说明。** 说明是不连线的批注，`parentNode` 指向该框，初始坐标 `{0, 0}`。HTTP 接口宽 `480`，正文用 comment-node.md 的接口说明，这张就是该功能的说明，不要再加第二张。其他功能宽 `320`，从「功能说明」起笔，写清入口、做什么、结果落到哪里；有失败告警或退出条件时用短列表补上。正文不要写和分组标题相同的标题。脚本把说明放在组内靠左，高度铺满组内节点列。除此之外不加批注。用户另要说明某一颗节点时，那张不写 `parentNode`，初始坐标在被说明节点外侧（`TB` 左侧、`LR` 上方）。
+- **默认不加批注，也不写接口文档。** 用户没有特别要求时，画布上不放接口说明、功能说明或节点便签，批注会把排版挤乱。接口的方法、路径、访问地址写在对话的汇报里。用户明确要求「写接口文档 / 加说明 / 加批注」时才加，写法见 comment-node.md；初始坐标写 `{0, 0}`，挂在哪个分组就写哪个 `parentNode`，位置交给脚本。
+- **默认不分组，特别复杂的流程按功能模块分组。** 简单流程（一段十来个执行节点以内，或几个各自很短的独立接口）不加分组框。流程特别复杂时（执行节点大约 15 个以上，或一段里能清楚分出几块职责，如「接收校验」「下单扣款」「通知告警」），按功能模块分组：一个模块一个框，模块可以是一段里连续的一截，也可以是一整段独立接口。成功/失败分支跟着它所在的模块，不要为分支单独加框，也不要每个节点一个框。用户明确要求分组时照做，明确不要时不分。只改参数、不改结构时，不要为了补分组去重排已有画布。组内节点必须写 `parentNode`，边照常连组内业务节点，可以跨框；框的宽高和组内坐标交给脚本（标题在框内，左右留白 48，上留白 84，下留白 48，有回连时自动加宽）；框背景写 `groupColor: "#4a535c"`、`groupOpacity: 0.03`、`groupBorderColor: "#4a535c"`、`groupBorderStyle: "solid"`、`groupBorderWidth: 1.5`、`groupRadius: 12`。`groupLabel` 用这个模块的短名，不要固定写成某一个词。
 - **两段及以上互不连线**时按下一节生成。
 
 ### 保存前检查边和图标
@@ -102,11 +102,11 @@ description: >-
 排版后、`workflow validate` 前跑一次：
 
 ```bash
-node <本 skill 目录>/scripts/check.mjs ./flow.json --fetch          # 只报告
-node <本 skill 目录>/scripts/check.mjs ./flow.json --fetch --fix    # 能确定的直接改回 flow.json
+node <本 skill 目录>/scripts/check.mjs ./flow.json --catalog /tmp/buildify-catalog/official__core@1.0.0.nodes.json \
+     --catalog /tmp/buildify-catalog/official__core@1.0.0.WebhookTriggerNode.relations.json --fetch --fix
 ```
 
-`--fetch` 按画布里用到的软件包调 `bundle nodes` / `bundle node-relations` 作对照，多工作区时加 `--profile <name>`。退出码 0 才往下走；1 表示还有 ERROR，3 是文件或拉目录失败。
+**步骤 4 存下的目录，版本对得上才复用。** 对每个软件包，看画布上这个包所有执行节点的 `bundleVersion`：都等于存下的文件名里的版本时，把这个包的 nodes 和 relations 文件都用 `--catalog` 传进去；版本不同、当时没记版本、或同一个包在画布上用了两个版本时，这个包的文件一个都不传。`--fetch` 始终带上：已经由 `--catalog` 给了的包和出口它会跳过，其余按画布上的 `bundleVersion` 加 `-V` 去拉。检查脚本只按包名认目录、不看版本，传进一份旧版本的目录会让它跳过重拉，对照结果就错了。多工作区时加 `--profile <name>`。退出码 0 才往下走；1 表示还有 ERROR，3 是文件或拉目录失败。
 
 它查的是 `workflow validate` 不一定能发现、但控制台会画错的地方：同一对节点出现两条边、边 `id` 不是 `{source}_{target}`、`relations` 不是数组或出口缺 `name` / `label`、出口名不在目录里、节点缺图标、图标和目录不一致、同类节点图标不同、图标写成 URL。`--fix` 会合并重复边、改正边 `id`、从目录补出口 `label` 和图标，不动 `description`；目录里没有的出口名不会自动猜，要按 `node-relations` 改。改完结构（合并了边）要重跑排版脚本。
 
@@ -116,8 +116,8 @@ node <本 skill 目录>/scripts/check.mjs ./flow.json --fetch --fix    # 能确�
 
 | 怎么生成 | 何时 |
 |---|---|
-| 主代理一次写完 | 只有一段；或一段里的成功/失败分支、复制下游。分支不要拆给子任务 |
-| 按段拆给子任务，再由主代理合并 | 两段及以上，且段与段之间没有边 |
+| 主代理一次写完 | 只有一段；或一段里的成功/失败分支、复制下游（分支不要拆给子任务）；或一共不超过 3 段、每段大约 8 个执行节点以内 |
+| 按段拆给子任务，再由主代理合并 | 段与段之间没有边，且超过 3 段，或有一段明显更长 |
 
 当前客户端没有子任务能力时，由主代理逐段生成，规则相同。
 
@@ -134,7 +134,7 @@ node <本 skill 目录>/scripts/check.mjs ./flow.json --fetch --fix    # 能确�
 - 不写顶层 `direction` / `errors` / `viewport`，不加批注和分组框
 - 不调用 save-draft / test-run / deploy，不改选项目或凭证
 
-**只有主代理写 `flow.json`。** 合并时：拼上各段 `nodes` / `edges`，检查 id 不重复、边不跨段；顶层只写一份 `direction` 和 `errors`。再由主代理为每一段加一个分组和一张组内说明（执行节点和说明都写该框的 `parentNode`）。按需求顺序给第 i 段（从 0 起）的分组框写粗略原点（`TB` 为 `{x: i*1000, y: 0}`，`LR` 为 `{x: 0, y: i*1000}`），组内说明写 `{0, 0}`，脚本靠框的坐标决定段的先后。跑一次排版脚本，然后照常做步骤 7–10。段内层距、段间隙由脚本处理，不要手动平移。
+**只有主代理写 `flow.json`。** 合并时：拼上各段 `nodes` / `edges`，检查 id 不重复、边不跨段；顶层只写一份 `direction` 和 `errors`。按需求顺序给第 i 段（从 0 起）写粗略原点（`TB` 为 `{x: i*1000, y: 0}`，`LR` 为 `{x: 0, y: i*1000}`）：不分组时写在这段每个顶层节点上；流程复杂、按上文要分组时，由主代理加分组框（组内节点写该框的 `parentNode`），原点写在框上。脚本靠这个坐标决定段的先后。跑一次排版脚本，然后照常做步骤 7–10。段内层距、段间隙由脚本处理，不要手动平移。
 
 ## 环境里没有对应节点：先做 Bundle，再回来编排
 
@@ -255,7 +255,7 @@ node <本 skill 目录>/scripts/check.mjs ./flow.json --fetch --fix    # 能确�
 
 ## 校验闭环（步骤 7）
 
-`workflow validate` 退出码 4 表示还有 ERROR。按 `issues[].path` / `issues[].nodeId` 定位，对照 `node-properties` 修 `data.parameters`，重跑直到表单类 ERROR 清掉。不要跳过校验直接试跑。
+`workflow validate` 退出码 4 表示还有 ERROR。只看 `issues`（`level` / `nodeId` / `path` / `message`），不要把整份响应或画布再读一遍。按 `issues[].path` / `issues[].nodeId` 定位，对照 `node-properties` 修 `data.parameters`，重跑直到表单类 ERROR 清掉。不要跳过校验直接试跑。
 
 **图里的环不算限制，但要核退出条件。** `issues` 里出现「环」/ cycle 时不要改边去消掉。出口连回上游入口是合法循环。只剩环导致 `valid: false` 时，先看环上有没有离开循环的边：有就照常 save-draft、试跑、发布；没有就补 If / Switch（或已有节点的另一出口）再问用户退出条件，不要带着死循环往下走。缺触发器、孤立节点、表单 ERROR 仍要修。
 
@@ -289,35 +289,45 @@ WARNING 不影响退出码，但也要修：`data.icon` 缺失、边上 `relatio
 
 表单里没有 `authType`、需求也对不上上表、又不是原文验签时，才在触发器下游加一个真实存在的校验节点；没有能校验的节点就按「环境里没有对应节点」处理。不要把不存在的 `authType` 写进参数。
 
-**每个接口的组内说明就是一张接口批注**，挂在该功能的分组里靠左（见 [comment-node.md](reference/comment-node.md)）。框标题用接口短名。正文从「接口说明」起笔，不要再写和框标题相同的标题，也不要再加一张功能说明。高度交给脚本，和组内节点列对齐。方法、路径、是否认证、有则写请求头 / 参数 / 示例 / 错误码，最后写访问地址。访问地址：生产 `http://{externalHost}:{httpPort}{path}`，测试在 path 前加 `/@test`。`externalHost` / `httpPort` 取已确认服务器在 `project workers` 里的字段；缺了就只写方法和 `parameters.path`，注明完整地址是「服务器访问地址 + 路径」，并提示到控制台「节点管理」设置。不要编造域名，不要把凭证密钥写进批注。
+**接口文档默认不写进画布。** 方法、路径、是否认证和访问地址放在对话汇报里。用户明确要求写接口文档时，才加一张接口批注（见 [comment-node.md](reference/comment-node.md)），一个接口一张，有分组就挂在该接口的分组里。正文从「接口说明」起笔，方法、路径、是否认证、有则写请求头 / 参数 / 示例 / 错误码，最后写访问地址。访问地址（汇报和批注同一套）：生产 `http://{externalHost}:{httpPort}{path}`，测试在 path 前加 `/@test`。`externalHost` / `httpPort` 取已确认服务器在 `project workers` 里的字段；缺了就只写方法和 `parameters.path`，注明完整地址是「服务器访问地址 + 路径」，并提示到控制台「节点管理」设置。不要编造域名，不要把凭证密钥写进批注。
 
 ### 试跑 HTTP 接口
 
 入口是 Webhook 触发器或渠道回调触发器时，步骤 9 按这个顺序做：
 
-1. **取访问地址。** 用已确认服务器的 `externalHost` / `httpPort`（`test-run` 返回里若带访问地址，以它为准），拼成 `BASE=http://{externalHost}:{httpPort}`。字段缺失时不要猜 hostname、`localhost` 或内网 IP，按第 3 步处理，原因写「该服务器还没有访问地址」。
-2. **先测通不通。** 只测连接，不调业务路径：
+1. **列出候选地址。** 取已确认服务器在 `project workers` 里的 `externalHost`、`httpPort`、`publicIp`（`test-run` 返回里若带访问地址，以它为准）。`externalHost` 可能自带 `http://` / `https://` 或端口：协议照它，带了端口就不再拼 `httpPort`；没写协议按 `http`。默认端口 `http` 是 **80**、`https` 是 **443**。按顺序列出，和前面重复的去掉：
+   1. `externalHost` + `httpPort`
+   2. `publicIp` 非空且和 `externalHost` 不是同一个主机时：`publicIp` + `httpPort`
+   3. 端口不是默认端口时：公网 IP（没有就用 `externalHost`）+ 默认端口
+
+   字段都没有时，候选为空，直接按第 3 步问用户。不要猜 `hostname`、`localhost`、内网 IP 或别的端口。
+2. **依次测通不通。** 只测连接，不调业务路径，每个候选一条命令，看完退出码再测下一个：
 
    ```bash
-   curl -sS -o /dev/null -w '%{http_code}' --connect-timeout 5 --max-time 10 "$BASE/"
+   curl -sS -o /dev/null -w '%{http_code}' --connect-timeout 5 --max-time 10 "$CANDIDATE/"
    ```
 
-   退出码 0 就算通（404 / 401 等任何 HTTP 状态码都算）。6（域名解析失败）、7（连接被拒绝）、28（超时）、35 / 60（TLS）算不通。
-3. **不通就停下**，不要 `test-run`，也不要换别的地址重试。告诉用户地址和原因，再点选下一步：
+   退出码 0 就算通（404 / 401 等任何 HTTP 状态码都算）。6（域名解析失败）、7（连接被拒绝）、28（超时）、35 / 60（TLS）算不通。第一个通的就是这次的 `BASE`，后面的不再测。`BASE` 不是第一个候选时，汇报里写一句「控制台登记的地址不通，这次用的是公网 IP / 默认端口」，并提示到控制台「节点管理」改访问地址。
+3. **都不通、或没有候选，就停下问用户**，不要 `test-run`。写出测过的地址和各自的原因，再点选：
 
    ```markdown
    ## 服务器访问地址不通
 
-   火山测试服务器的访问地址 `http://1.2.3.4:8080` 从本机连不上（连接超时）。
+   火山测试服务器从本机连不上：
 
-   请确认服务器在运行，且端口已在防火墙 / 安全组放行；地址不对的话，到控制台「节点管理」里修改这台服务器的访问地址。
+   - `http://1.2.3.4:8080`：连接超时
+   - `http://5.6.7.8:8080`：连接被拒绝
+   - `http://5.6.7.8`：连接超时
 
-   1. 已处理，重新检测（推荐）
-   2. 换一台服务器
-   3. 先只保存草稿
+   请确认服务器在运行，且端口已在防火墙 / 安全组放行。如果这台机器要用别的地址访问（域名、内网穿透、代理、端口映射），直接把地址告诉我。
+
+   1. 我来填访问地址（选「其他」写上地址和端口）
+   2. 已处理，重新检测（推荐）
+   3. 换一台服务器
+   4. 先只保存草稿
    ```
 
-   「重新检测」：重新拉 `project workers` 取地址，从第 2 步再来。「换一台」：按「沿用已有，只问缺的」列出服务器；新服务器还没绑定（`workflow workers` 里没有 `deleteStatus` 0）时，确认后先 `assign-workers`，再继续试跑和发布。「只保存草稿」：停在步骤 8。
+   没有候选时，开头改成「控制台还没有这台服务器的访问地址」，不列测过的地址。「我来填」：用用户给的地址从第 2 步测一次，通了就用它当 `BASE`，并提示到「节点管理」把它登记上。「重新检测」：重新拉 `project workers`，从第 1 步再来。「换一台」：按「沿用已有，只问缺的」列出服务器；新服务器还没绑定（`workflow workers` 里没有 `deleteStatus` 0）时，确认后先 `assign-workers`，再继续试跑和发布。「只保存草稿」：停在步骤 8。
 4. **通了再试跑。** 后台启动 `test-run`，在它超时前向测试地址发一次请求，再等它返回：
 
    ```bash
@@ -328,7 +338,7 @@ WARNING 不影响退出码，但也要修：`data.icon` 缺失、边上 `relatio
    ```
 
    测试地址 = `BASE` + `/@test` + 触发器 `parameters.path`，方法与触发器一致；路径参数（如 `:id`）换成示例值，请求体按需求造一条最小样例。触发器开了入站认证时，不要猜密钥、不要从凭证里取明文：请用户提供，或请他自己调测试地址，再等 `test-run` 结果。
-5. 结合 `test-run` 的 `nodes[].outputs` / `events` 和这次 HTTP 响应判断是否符合需求，按 [report.md](reference/report.md)「试跑后」汇报。
+5. 结合 `test-run` 的结果和这次 HTTP 响应判断是否符合需求，按 [report.md](reference/report.md)「试跑后」汇报。`test-run` 的输出已经落到文件，只取 `success`、`reason`，以及失败或结果不对的那几个节点的 `outputs` / `events`，不要把整份响应读进对话。
 
 ## 通知与失败告警
 
