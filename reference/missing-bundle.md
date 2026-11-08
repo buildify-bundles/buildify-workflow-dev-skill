@@ -135,6 +135,6 @@
    - bundle-dev「新建软件包」要确认的完整名、显示名、简介、可见性已在第 2 步确认过，直接用「编排待续」里的值建命名空间和包，**不要再问一遍**。
    - 用户提供了图片时按 bundle-dev「命名与图标」上传：节点图标放 `icons/` 后 `bundle icon upload`，封面用 `bundle create --icon`。
    - 仍要问用户的只有：缺发布密钥（`buildify-publish-cli` 密钥，照 bundle-dev 的模板）；`key test` 的工作空间不是当前编排的工作空间；`namespace create` 返回 409（命名空间被别的工作空间占用，只问换成什么名，并同步改 `bundle.json`）；`bundle create` 返回 409（同名包已存在，问是用这个包还是换名）。
-3. **发布成功后回到步骤 4。** `buildify --json bundle list -k <关键词>` 确认新包可见，再 `bundle nodes` / `node-properties` / `node-relations` 取真实的 `bundleVersion`、`icon`、表单和 relations。不要用 Bundle 源码里的值代替 CLI 返回。
+3. **发布成功后回到步骤 4。** `buildify --json bundle list -k <关键词>` 确认新包可见，再 `node <本 skill 目录>/scripts/catalog.mjs fetch -b <包名> -n <节点,…> --refresh` 取真实的 `bundleVersion`、`icon`、表单和 relations（`--refresh` 避免用到发布前的旧缓存）。不要用 Bundle 源码里的值代替 CLI 返回。
 4. **看不到新包时不要编 JSON。** 先确认发布密钥和 buildify-cli 密钥是同一个工作空间（对比两边 `key test` 的工作空间），再告诉用户已发布的 `bundleName` 和版本，请他在控制台确认这个包对当前工作区可用，确认后重查。
-5. **接着编排。** 「编排待续」里已确认的项不再问；新节点有凭证槽时照「凭证」三选一，然后照常走步骤 5–10。发布汇报里加「新增 Bundle」一节（见 [report.md](report.md)）。
+5. **接着编排。** 「编排待续」里已确认的项不再问；新节点有凭证槽时照 [credentials.md](credentials.md) 三选一，然后照常走步骤 5–10。发布汇报里加「新增 Bundle」一节（见 [report.md](report.md)）。

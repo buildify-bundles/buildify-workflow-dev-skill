@@ -1,9 +1,10 @@
 # 流程 canvas JSON
 
-控制台把编辑器画布存进 `workflow_version.workflow_json`。本 skill 生成的就是这份 **Vue Flow 文档**，
-不是 worker 上的运行时 JSON。
+控制台把编辑器画布存进 `workflow_version.workflow_json`。本 skill 生成的就是这份 **Vue Flow 文档**，不是 worker 上的运行时 JSON。
 
-`bundleId` 已废弃。节点必须写 `data.bundleName`。仓库里个别测试 fixture 仍用 `bundleId`，不要照抄。
+**一般不用手写。** 新建和改已有都用 `scripts/build.mjs` 从 spec 生成（见 [recipes.md](recipes.md)），这份文档用来读懂已有草稿、或手改脚本表达不了的地方。手改后跑 `check.mjs --fix` 和 `layout.mjs`。坐标规则见 [layout-manual.md](layout-manual.md)，有 Node 时不用读。
+
+`bundleId` 已废弃。节点必须写 `data.bundleName`。
 
 ## 顶层
 
@@ -17,198 +18,32 @@
 }
 ```
 
-解析器只读 `nodes` 与 `edges`。`viewport` / `position` / `zoom` 是 UI 字段，但要给互不重叠的坐标，否则画布叠在一起。
-顶层 **`errors` 必写**：表单校验结果按节点 id 汇总。全部通过写 `{}`；未通过写 `{"<nodeId>": <未通过字段数>}`。`workflow validate` 之后把这份汇总写回 JSON 再 save-draft。
-顶层 **`direction` 必写**：控制台画布排列方向，决定主链怎么走、连线从哪边进出。缺了控制台按 `TB`。
-
-## 画布排列（按 `direction`）
-
-控制台工具栏只有两种：`TB` 竖向、`LR` 横向。编排时**必须写顶层 `direction`**。
-
-**默认 `TB`。** 用户明确要求横排 / 横向 / 从左到右 / `LR` 时才用 `LR`。改已有流程时沿用草稿里的 `direction`，不要仅为换方向而重排，除非用户要求。
-
-### 排版脚本（先连线，最后统一排）
-
-坐标不要手算。写齐节点和边后运行：
-
-```bash
-node <skill 目录>/scripts/layout.mjs ./flow.json [--direction TB|LR] [--group <分组 id>] [-o out.json] [--check]
-```
-
-| 项 | 说明 |
-|---|---|
-| 依赖 | Node 18+。dagre 已内置在 `scripts/vendor/`，不用 `npm install` |
-| 方向 | 默认读顶层 `direction`（缺省 `TB`）。传 `--direction` 时连顶层一起改 |
-| 只排一个分组 | `--group <分组 id>` 对应控制台分组右键「自动排列组内节点」：只重排这个分组（含嵌套子分组）里的节点，框的左上角不动、宽高按内容重算；组外节点不动，外层分组装不下时只向右、向下放大。不能和改方向的 `--direction` 一起用 |
-| 写什么 | 执行节点的 `position`、`sourcePosition` / `targetPosition`；分组框的 `position`、`style.width/height`；组内子节点相对框的 `position`；批注落位后的 `position`（不改批注宽高）。缺 `errors` 时补 `{}` |
-| 不写什么 | 不写 `dimensions`，也不给执行节点写 `width` / `height`（控制台按内容测量卡片） |
-| 收尾 | 整图排版时，有顶层盒子落到 `x < 40` 或 `y < 24`（通常是批注）时，把所有顶层节点一起平移进来。`--group` 不做这一步 |
-| 退出码 | 0 写好；1 只在 `--check` 时出现，表示坐标还不是自动排列结果；3 文件或图结构有错（边指向不存在的节点、连到分组框或批注、`parentNode` 不是分组框、id 重复、`--group` 指的不是分组框） |
-
-脚本移植自控制台 `applyLayout.js`（回边不参与分层 + 按出口顺序固定分支左右 + Dagre 分层 + 主链加权 + 拉直短错位 + 扇出与出口文字加层距 + 同层起点对齐 + 外层过宽扇出拆排 + 多段并排 + 分组包络 + 批注放进空白）。**各层都不折行**，再长的主链也是一条。卡片按 **248×63** 兜底；控制台里 `summary` 很长、卡片被撑宽时，用户再点「自动排列」会略有差异，属于正常现象。出口文字的宽度脚本按字数估算（全角 11、半角 6.6），控制台在浏览器里实测，横排时很长的出口名可能差几像素。
-
-**回连和分支顺序**：脚本从入口做深度优先遍历，连回遍历栈里上游节点的边算回连，不参与分层，主线和循环体照样排直，回连由控制台在外侧绕。同一节点的多条出边按出口首次出现的顺序排左右（`TB` 从左到右、`LR` 从上到下），所以每次重排分支位置都一样。想让某个出口在左 / 上，就把它的边写在前面。
-
-**主链优先**：脚本先找最长的一条路径当主链，让 Dagre 优先把它排直，一进一出的链式边次之，旁支分到两侧。排完后，只有一条入边、和上游中心线差得不多（不到 48 或节点间距）的节点会沿交叉轴挪过去对齐，消掉短 Z 形线。同一上游多条出边时只拉直一支；上游有多个出口把手、或两端是分组时不处理。编排时按业务顺序连边即可，不要为了「主链直」加中间节点。
-
-**出口文字让位**：层距会留够放出口文字的空间（文字 + 两侧箭头 22 + 余量 6；扇出、汇合时再加共用主干 48）。`TB` 文字高 22，普通单线层距 74 已够；扇出 2 路、或多路汇入同一节点时净空约 **120**。`LR` 按文字宽度算：出口名 7 个汉字起单线层距会比 140 大；扇出 2 路或汇合时 3 个汉字起、扇出 3 路及以上时 6 个汉字起就会变大。不要为了让文字放得下去手动加大间距。
-
-**过宽扇出拆排**：只在画布外层做，**分组内部不拆排**。一个节点直接连出 **≥6** 个下游，且这些下游**都是没有出边的叶子**（不是分组）、整层只有它们、宽度超过 8 张卡片（含间距）的 1.3 倍时，才把它们交错排进几排，排与排沿流向错开，后面的节点整体后移让位。默认卡片下单个节点扇出 **11 个**下游起拆（`TB` / `LR` 相同）。下游还连着后续节点、有交叉汇合、或这一层还混着别的节点时不拆，保持 Dagre 的一排。编排时照常从源节点各连一条边，不要为了拆排加中间节点。
-
-**共用收尾节点**：一个节点没有自己的出边，且至少 **3** 个上游各自还有别的出边（主链继续走，旁支汇到同一个节点，例如各步失败都接到同一个「失败返回」），脚本会把它从 Dagre 里拿出来：主体先排，再把它放到主体尽头（`TB` 在下方，净空 **120**；`LR` 在右侧，净空 **170**；最后一层连过来的出口文字放不下时再加大），交叉轴对齐主体中线，多个这样的节点并排。编排时就连到这一个节点，不要为了“线太长”复制多份，也不要手算它的坐标。普通汇合不算：上游只有通向它的这一条出边时，仍和主体一起排。不足 3 个这样的上游也不单拎出来。
-
-排版只看边，执行节点的初始坐标不影响结果，可以不写。下面两种情况要给粗略的初始坐标：
-
-- **批注**（只在用户要求时才有）：初始坐标写 `{0, 0}`，挂在分组里就写该框的 `parentNode`。脚本排完节点后，先在节点范围内从左上角找一块不压住节点的空白放进去；放不下就贴到节点外侧，`TB` 在右侧、`LR` 在下方，净空 **24**，多张沿流向接着排，分组随之撑开。批注不会盖住节点，也不会被拉高。
-- **多段**：第 i 段（从 0 起）写同一个坐标，`TB` `{x: i*1000, y: 0}`、`LR` `{x: 0, y: i*1000}`。不分组时写在这段每个顶层节点上，分组时写在框上。脚本按这个坐标决定段的先后，坐标相同时按 id 排。
-
-跑完可以用 `--check` 确认，之后不要再手动挪执行节点或改分组宽高。改了结构就重跑。
-
-### 手算兜底（没有 Node 时）
-
-脚本跑不了才照下面手算，规则与脚本相同。过宽扇出拆排只能靠脚本，手算时保持一条主链 / 一排兄弟，不要自己折行。执行节点按卡片 **宽 248、高 63** 占位，给每个执行节点写 `sourcePosition` / `targetPosition`，不要混用方向（例如 `direction: "LR"` 却竖着排）。
-
-步进 = 该方向上的卡片边长 + 净空。同层沿流向对齐：`TB` 同一层 `y` 相同（顶齐），`LR` 同一层 `x` 相同（左齐）。分叉时父节点在交叉轴上居中盖住两侧子节点。画布第一张卡片从 `{ "x": 45, "y": 24 }` 起（自动排版的 `marginx` / `marginy`）。
-
-| `direction` | 锚点 | 主链（这一层出度 1） | 同层兄弟（全图最大出度 ≤2） | 扇出 |
-|---|---|---|---|---|
-| `TB`（默认） | `sourcePosition: "bottom"`，`targetPosition: "top"` | 同一 `x`，`y += 137`（净空 **74**） | 同一 `y`，相邻 `x += 298`（净空 **50**） | 上一层有普通节点出度 **≥ 2**：下一层改为 `y += 183`（净空 **120**）。出度 **≥ 3** 时兄弟改为 `x += 288`（净空 **40**）。多路汇入同一节点的那一层也至少 `y += 183` |
-| `LR` | `sourcePosition: "right"`，`targetPosition: "left"` | 同一 `y`，`x += 388`（净空 **140**） | 同一 `x`，相邻 `y += 135`（净空 **72**） | 出度 **= 2** 不加长。出度 **≥ 3**：下一层改为 `x += 418`（净空 **170**），兄弟改为 `y += 119`（净空 **56**） |
-
-一层里只要有一个普通节点达到上表扇出，**下一层整层**一起沿流向加长。这只作用于**同一段**（彼此有边相连的那一组）；互不连线的几段各自按本段扇出排，再按「多段并列」并排。分组框的出度不算。组内与画布共用这张表，不要另用更紧的组内步进。表里按 4 个汉字以内的出口名算；`LR` 出口名更长时脚本会再加长，手算时不必追。不要按一条边上有几个出口 label 再加长度，也不要把步进收到比上表更短。
-
-`TB` 主链（净空 74，出口文字落在两卡片之间的竖线上）：
-
-```
-[触发]  x=45 y=24
-[处理]  x=45 y=161
-[应答]  x=45 y=298
-```
-
-`LR` 主链（净空 140）：
-
-```
-[触发] x=45 y=24  →  [处理] x=433 y=24  →  [应答] x=821 y=24
-```
-
-分叉的目标放在**下一层**，父节点居中，兄弟用上表净空。不要和源节点放在同一层紧旁边。
-
-```
-TB（出度 2，下一层净空 120）          LR（出度 2，层距不加长，兄弟净空 72）
-
-        [判断] x=194 y=24              [判断] x=45 y=91.5
-       /                \                 |                \
-[A] x=45 y=207    [B] x=343 y=207   [A] x=433 y=24    [B] x=433 y=159
-```
-
-`TB` 里两个子节点的 `x` 是 `45` 和 `45 + 298`，父节点 `x = (45 + 343) / 2 = 194`。`LR` 里子节点 `y` 是 `24` 和 `24 + 135`，父节点 `y` 取两侧的垂直中心 `(24 + 159) / 2 = 91.5`。
-
-规则（两种方向共用）：
-
-- 同层对齐：`TB` 同一层 `y` 相同，`LR` 同一层 `x` 相同。用上表的间距，不要斜着错开半格
-- 主链优先走直线（`TB` 同 `x`，`LR` 同 `y`）
-- 出口文字由控制台按折线摆，编排只要把净空留够：一条顺向边的文字在两卡片之间；同一节点分出两条及以上顺向边时，线在源节点附近共用主干再分叉，文字落在进入各自目标前的分支上；多条边汇入同一目标时，文字在各自来路上。不要为了拆开文字去加大列距，也不要把多个出口拆成多条边
-- 不要交叉、不要穿过别的节点、不要让文字压在卡片上。**回连成环除外**：从下游出口接到上游入口时，节点仍按主链排，回连交给控制台绕线，不要为了消环拆边或把下游挪到上游旁边
-- 能沿流向直连汇合、边不穿过别人时，再共用下游；否则各支路继续沿主方向排
-- 分组框、批注不要写 `sourcePosition` / `targetPosition`。批注（`comment` / `notes`）以及 `type: text` 不参与层级排版：批注放进节点范围的空白或节点外侧，文本节点跟随离它最近的节点（见「批注节点」）
-- 批注和分组框各占一块矩形。框外节点、另一块分组、批注都按**矩形外缘**留空，不要用卡片步进去挨着框。见下文「批注节点」「节点分组」
-- 两段及以上互不连线时，段内用上表步进，段与段之间按外接矩形错开。见下文「多段并列」
-
-### 多段并列（互不连线的几段）
-
-一段 = 从一个触发器出发、彼此有边相连的那一组。控制台自动排版对两段之间没有边的情况（例如两个独立接口）是**每段单独排**：段内层距只看本段扇出，再把各段按外接矩形沿交叉轴依次排开（`TB` 左右并排、`LR` 上下叠放），每段都从同一流向起点开始，不折到下一排。
-
-**用脚本时**只需按「排版脚本」给每段一个粗略原点，段内层距、对齐和段间隙都由脚本完成。下面是手算兜底：先各自按上表从局部原点排段内坐标，再整段平移。不要让一段的扇出去拉长另一段。
-
-| `direction` | 各段对齐 | 下一段从哪开始 | 第一段原点 |
-|---|---|---|---|
-| `TB` | 顶对齐（各段外缘最上沿都在 `y = 24`） | `x = 上一段最右外缘 + 64` | 外缘左上角 `{45, 24}` |
-| `LR` | 左对齐（各段外缘最左沿都在 `x = 45`） | `y = 上一段最下外缘 + 72` | 外缘左上角 `{45, 24}` |
-
-外缘 = 这段里所有顶层盒子（卡片或分组框）的外接矩形。分组标题在框内，框的最上沿就是框 `y`。段的先后顺序按需求里的顺序；控制台重排时按各段当前最左（`TB`）/ 最上（`LR`）坐标排序。段再多也按上表一段接一段排开。
-
-`TB` 两段（左段两路分叉，右段从左段最右卡片右缘 `343 + 248` 再加 64）。右段没有扇出，第二张仍按普通层距 `24 + 137 = 161`：
-
-```
-[触发A] x=194 y=24                      [触发B] x=655 y=24
-[处理A] x=45 y=207  [处理A2] x=343 y=207   [处理B] x=655 y=161
-```
-
-`LR` 同理：取上一段最下外缘，再 `+ 72`，下一段从 `x = 45` 起。
-
-手算时段内坐标从局部原点 `(0, 0)` 起，不要再加 45/24，合并时一次性平移。边不要跨段。默认不加分组和批注；流程复杂、要按功能模块分组时，见「节点分组」。
-
-### 分支：必要时复制配置相同的节点
-
-画布清晰优先于「少画一个节点」。两条支路都要做**同一件事**（同一 `data.name`、同一套 `parameters` / `credentials`），但共用一个节点会让边斜穿、交叉或绕行时：**每条支路各放一份**，不要强行汇合。
-
-| 才复制 | 仍然共用 |
-|---|---|
-| 成功/失败（或多出口）各自收尾，例如各回一次 Webhook、各写一次库 | 线性流程，没有分叉 |
-| 汇合边会穿过中间节点或和其他边交叉 | 支路沿流向正前方能干净接到同一个节点，边不穿过别人 |
-| 为绕到共用节点必须斜线、回头、跨列 | 只是少画一个相同配置的节点 |
-
-至少 3 个节点的旁支汇到同一个没有出边的收尾节点（如统一的失败返回）时保持共用，脚本会把它放到主体尽头，见上文「共用收尾节点」。
-
-复制时：**重新抽一个 `n-` + nanoid** 作新 `id`（不要复用、不要 `n1`/`n2`）；`name` / `bundleName` / `bundleVersion` / `icon` / `label` / `parameters` / `credentials` 与原配置一致（支路本身不同的字段除外）；`summary` 仍 ≤8 字，可相同或略区分（如「成功返回」「失败返回」）。**不要复制触发器**，也不要无意义地复制整条链。
+- 解析器只读 `nodes` 与 `edges`。`viewport` / `position` 是 UI 字段，交给排版脚本。
+- **`direction` 必写**：`TB` 竖向（默认）或 `LR` 横向。用户明确要横排才用 `LR`；改已有沿用草稿。
+- **`errors` 必写**：表单校验结果按节点 id 汇总。全部通过 `{}`；未通过 `{"<nodeId>": <未通过字段数>}`，只计表单 ERROR（缺必填、枚举非法、未知键、凭证），不计 WARNING 和环。每次 `workflow validate` 后用 `result.mjs validate … --write-errors` 写回，再 save-draft。
 
 ## 节点（执行相关）
 
 | 字段 | 必填 | 含义 |
 |------|------|------|
-| `id` | 是 | **`n-` + nanoid**（如 `n-k7mX2pL9`），本流程内唯一。边的 `source` / `target` 引用它。真正生成时不要用 `n1` / `trigger` 这类可读名 |
-| `type` | 否 | Vue Flow 视觉类型，用 `"default"` |
-| `position` | 脚本写 | `{ "x": number, "y": number }`。由 `scripts/layout.mjs` 计算，编排时可以不写（多段、批注的粗略初始坐标除外）。没有 Node 时按「手算兜底」 |
-| `sourcePosition` | 脚本写 | 执行节点连线出口边。与 `direction` 一致：`TB` 用 `"bottom"`，`LR` 用 `"right"`。分组框/批注不要写 |
-| `targetPosition` | 脚本写 | 执行节点连线入口边。与 `direction` 一致：`TB` 用 `"top"`，`LR` 用 `"left"`。分组框/批注不要写 |
-| `data.name` | 是 | Bundle 节点 id = `@FlowNodeDescription.name`，例如 `JsFunctionNode` |
-| `data.bundleName` | 是 | 逻辑名，与 `buildify bundle list` 的 `bundleName` 完全一致 |
-| `data.bundleVersion` | 是 | 钉死的版本；用 `bundle nodes` 回显的 `bundleVersion`，不要写 `latest` |
-| `data.parameters` | 视表单 | 对象，键必须出现在该节点 `properties_json` |
-| `data.credentials` | 视表单 | 对象：`{ "<槽名>": { "type": "PascalCase", "name": "实例名" } }`。`type`/`name` 必须来自用户从 `project credentials` 点选的那条，禁止默认第一条或编造 |
-| `data.icon` | **是** | 从 `bundle nodes`（或 `node-properties`）**该节点类型**的 `icon` 原样拷贝，是 `js.svg` 这种文件名，控制台靠它显示节点图标。按类型逐个查，不要凭名字猜、不要借别的节点或软件包本身的图标、不要写 URL。同一类型的节点（含复制出来的）图标必须相同 |
-| `data.label` | 建议 | 从目录 `label` **原样拷贝**节点类型名（如「Webhook」「JavaScript」）。不要把本流程职责写到这里 |
-| `data.summary` | **建议** | 画布**默认显示**此字段。写该节点在**本流程**中的职责，**≤8 字**。不要照抄目录通用 `summary`，也不要写路径、SQL、字段名 |
-| `data.isTrigger` | 建议 | 触发器写 `true`；目录里 `isTrigger: true` 的节点必须标上 |
+| `id` | 是 | **`n-` + 8 位 nanoid**（如 `n-k7mX2pL9`），本流程内唯一。已有草稿的旧 id 不要改。不要用 `n1` / `trigger` 这类可读名 |
+| `type` | 否 | Vue Flow 视觉类型，用 `"default"`。它**不是** bundle 节点类型，执行节点的类型是 `data.name` |
+| `position` / `sourcePosition` / `targetPosition` | 脚本写 | 排版脚本计算。`TB` 是 `bottom` / `top`，`LR` 是 `right` / `left`。分组框/批注不写锚点 |
+| `data.name` | 是 | Bundle 节点 id，例如 `JsFunctionNode` |
+| `data.bundleName` | 是 | 与 `bundle list` 的 `bundleName` 完全一致，如 `buildify/core` |
+| `data.bundleVersion` | 是 | 钉死的版本，用目录回显的 `bundleVersion`，不要写 `latest` |
+| `data.parameters` | 视表单 | 键必须出现在该节点表单里 |
+| `data.credentials` | 视表单 | `{ "<槽名>": { "type": "PascalCase", "name": "实例名" } }`，同一个对象也写进 `parameters.<槽名>`（控制台这样存）。`type` / `name` 必须来自用户从 `project credentials` 点选的那条 |
+| `data.icon` | **是** | 目录里**该节点类型**的 `icon` 文件名（如 `js.svg`），不要凭名字猜（`JsFunctionNode` 是 `js.svg`，`HttpRequestNode` 是 `request.svg`），不要借别的节点或软件包的图标，不要写 URL。同一类型的节点图标相同 |
+| `data.label` | 建议 | 目录 `label` 原样拷贝（节点类型名，如「Webhook」「JavaScript」） |
+| `data.summary` | **建议** | 画布默认显示。写这颗节点在**本流程**中的职责，**≤8 字**；不要照抄目录 `summary`，也不要写路径、SQL、字段名 |
+| `data.isTrigger` | 建议 | 目录里 `isTrigger: true` 的节点必须标上 |
 | `data.disabled` | 否 | `true` 时跳过执行 |
-| `data.isLayoutNode` | 否 | `true` 时解析器忽略（分组框、**批注**），不要给业务节点加这个 |
-| `parentNode` | 组内必写 | 分组框的 `id`。组内组件**必须**设置后才是真实分组；不写则只是画在附近。`position` 相对分组框左上角，**留白不要贴边** |
+| `data.isLayoutNode` | 否 | `true` 时解析器忽略（分组框、批注），不要给业务节点加 |
+| `parentNode` | 组内必写 | 分组框的 `id`。不写就分不进去，只是画在附近 |
+| `extent` | 建议 | 组内节点写 `"parent"`，拖动时留在框内 |
 
-`type`（Vue Flow）**不是** bundle 节点类型。执行节点的类型是 `data.name`。批注用 Vue Flow `type: "comment"`，见下文。
-
-槽名（credentials 的 key）等于表单里 `CredentialSelect` 字段的 `name`，常见为 `credentialsId`。用 `bundle node-properties` 确认，不要猜。实例名必须是用户从 `project credentials` 点选的，禁止默认第一条。
-
-### 节点 id：`n-` + nanoid，流程内唯一
-
-每个节点（含批注、分组框、复制出来的节点、组内子节点）的 `id` 用 **`n-` 前缀 + 8 位 nanoid** 生成，保证**本流程内**不重复。边的 `source` / `target` 必须引用这个 id。已有草稿上的旧 id 不要改（改了边会对不上）；只给**新生成**的节点抽新 id。
-
-```bash
-python3 -c "import secrets,string; a=string.ascii_letters+string.digits; print('n-' + ''.join(secrets.choice(a) for _ in range(8)))"
-```
-
-得到如 `n-k7mX2pL9`。抽到已占用的值就重抽。边的 `id` 仍用 `{source}_{target}`。文档示例里的 `n1` / `trigger` 只为便于阅读，真正写入画布时不要照抄。
-
-### 表单校验：`errors` 写入流程 JSON
-
-画布顶层必须带 `errors`，按节点 id 汇总未通过的表单字段数。`workflow validate` 之后**写回这份 JSON**，不要只读响应、不落盘。
-
-全部通过：
-
-```json
-{"errors":{}}
-```
-
-未通过（key 是节点 `id`，value 是该节点未通过字段数）：
-
-```json
-{"errors":{"n-k7mX2pL9":1}}
-```
-
-多个节点：`"errors":{"n-k7mX2pL9":1,"n-CIq2dZyc":2}`。只统计表单参数 ERROR（缺必填、枚举非法、未知键），不要把 WARNING 写进去。
-
-处理：用 key 在 `nodes[]` 里定位 → 对照 `node-properties` 修 `data.parameters` → 再 `workflow validate` → 把新的 `errors` 写进 JSON。用户明确说稍后自填时，仍要把当前汇总写进去再 save-draft。`issues[].nodeId` 与此同一套 id。
-
-`label` 与 `summary` 分工：`label` 是节点类型名（跟目录走）；`summary` 是画布卡片上的默认文案，描述**这一颗**节点在本流程里做什么，**要短**。
+`label` 与 `summary` 分工：`label` 跟目录走；`summary` 描述这一颗节点做什么，要短。
 
 | 差 | 好（≤8 字） |
 |---|---|
@@ -216,197 +51,30 @@ python3 -c "import secrets,string; a=string.ascii_letters+string.digits; print('
 | 按 projectId 查询设备 | 查询设备 |
 | 把 JSON 上传到 OSS all.json | 上传 OSS |
 
-空 `summary` 时画布几乎没有可读信息，不要省略；超长会撑破卡片，也不要写。
+**消息结构**：触发器的 payload 在根级（`msg.xxx`）；普通节点的输出在 payload 里包一层 `output`（`msg.output.xxx`），上游字段仍保留；**`JsFunctionNode` 的返回值直接成为下游的整个 `msg`**，没有 `output` 这一层。占位名用 `msg`，不要用 `$json`。表达式语法见 [expressions.md](expressions.md)。
 
-## 批注节点（便签，不执行）
+### 分支：必要时复制配置相同的节点
 
-Markdown 便签，不执行、不连线。解析器遇到 `data.isLayoutNode: true` 会跳过，**不要写** `bundleName` / `bundleVersion`，**不要连边**。可写字段与 Markdown 见 [comment-node.md](comment-node.md)。
-
-**默认不加。** 用户没有特别要求时，画布上不放接口文档、功能说明或节点便签：批注会占掉节点旁的空白，把排版挤乱。接口的方法、路径和访问地址写在对话汇报里（见 [report.md](report.md)）。
-
-| 才加 | 仍然不加 |
-|---|---|
-| 用户明确要求「写接口文档」「加说明 / 批注 / 便签」 | 用户没提；复述节点 `summary` / `label`；每个执行节点贴一张 |
-| 用户要的是接口文档时，一个接口一张，正文用 [comment-node.md](comment-node.md) 的接口说明 | 同一接口或同一模块再加第二张 |
-| | 用批注重复触发器上已经写好的入站认证（接口说明里的「是否需要认证」除外） |
-
-**位置交给脚本。** 批注初始坐标写 `{ "x": 0, "y": 0 }`。画布做了分组、批注说明的是某个模块时，写该框的 `parentNode`；否则不写。控制台自动排版（`applyLayout.js`）不把批注送进 Dagre，排完节点后按下面放，组内组外同一套：
-
-1. 先在这一层节点的外接矩形里，从左上角起按 24 一格找一块不压住任何节点（净空 **24**）的空白，找到就放进去。
-2. 放不下时贴在节点外侧：`TB` 在右侧（`x = 节点最右缘 + 24`，顶边与最上节点对齐），`LR` 在下方（`y = 节点最下缘 + 24`，左边与最左节点对齐）。多张时沿流向接着排（`TB` 往下、`LR` 往右），在分组里时框随之撑开。
-3. 多张批注按初始坐标的先后（先 `y` 后 `x`，再按 id）依次放。
-
-批注不会盖住节点，也不会被拉高。批注矩形 = `position` 起、`style.width` × `style.height`：宽默认 **320**，HTTP 接口文档 **480**（最小 180、最大 480）；高按正文估 `28 + 17×正文行数 + 20×标题行数`，限制在 50–480，超过 480 写成 480，不要留大块空白。
-
-手算兜底（没有 Node）时直接按第 2 步放在节点外侧。`zIndex: 2`。不要写 `sourcePosition` / `targetPosition`。
-
-正文写 `parameters.commentMarkdown`。接口文档用 [comment-node.md](comment-node.md) 的接口说明（方法、路径、认证、参数表、示例、错误码、访问地址）；其他说明从「功能说明」起笔，写清入口、做什么、结果落到哪里。挂在分组里时开头不要写和分组标题相同的标题。
-
-`externalHost`、`httpPort` 用已确认服务器的字段；缺了就只保留方法和 path，写「完整地址 = 服务器访问地址 + 路径」。不要编造域名。测试前缀是 `/@test`，生产不加。
-
-已有正文时 **不要** `autoEdit: true`。用户要接口文档时用这个形状；`id` 换成 `n-` + nanoid；有分组时 `parentNode` 换成该框的 id，没有就删掉这一行，不要照抄 `note-trigger`：
-
-```json
-{
-  "id": "note-trigger",
-  "type": "comment",
-  "position": { "x": 0, "y": 0 },
-  "zIndex": 2,
-  "parentNode": "n-groupId",
-  "style": { "width": "480px", "height": "480px" },
-  "data": {
-    "name": "CommentNode",
-    "label": "comment",
-    "summary": "批注",
-    "hasInput": false,
-    "hasOutput": false,
-    "isLayoutNode": true,
-    "isShowConfigOnAdd": false,
-    "autoEdit": false,
-    "parameters": {
-      "commentMarkdown": "**接口说明**：创建一个新用户账号\n\n**请求方式**：`POST`\n\n**请求路径**：`/users`\n\n**是否需要认证**：是\n\n#### 访问地址\n\n- 生产：`http://{externalHost}:{httpPort}/users`\n- 测试：`http://{externalHost}:{httpPort}/@test/users`",
-      "commentBackground": "ink",
-      "commentBackgroundOpacity": 0,
-      "commentBorderWidth": 1.5
-    }
-  }
-}
-```
-
-旧画布可能是 `type: "notes"`，读写时与 `comment` 同等对待。背景默认 `ink`（`#4a535c`，透明度 `0`），边框宽度默认 `1.5`；不要编造 `bundle` 节点名叫 CommentNode 去 `bundle nodes` 里找。**不要用批注当分组框**（分组见下一节）。
-
-## 节点分组
-
-画布分区用 Vue Flow 父子节点。**默认不分组。** 简单流程（一段十来个执行节点以内，或几个各自很短的独立接口）不加框，排版脚本已经能排清楚。
-
-**特别复杂的流程按功能模块分组。** 执行节点大约 15 个以上，或一段里能清楚分出几块职责（如「接收校验」「下单扣款」「通知告警」）时，一个功能模块一个框。模块可以是一段里连续的一截，也可以是一整段独立接口。成功/失败分支跟着它所在的模块，不要为分支单独加框，也不要每个节点一个框。用户明确要求分组时照做，明确不要时不分。只改参数、不改结构时，不要为了补分组去重排已有画布。
-
-**组内组件必须写 `parentNode`，否则不是真实分组。** 只把节点画在框的坐标范围内、或用批注撑一块背景，控制台不会把它们当成一组。
-
-分组框（父节点）是布局节点：`type: "group"`，`data.isLayoutNode: true`。`position` 和 `style` 宽高、组内子节点的相对坐标都由排版脚本算，编排时只写框的基础字段和子节点的 `parentNode`（多段时框写本段粗略原点）。**不要写** `bundleName` / `bundleVersion`，**不要出现在任何 `edges` 里**。组内业务节点照常写 `data.name` / `bundleName` / 参数，并连边。
-
-| 字段 | 谁写 | 含义 |
-|------|------|------|
-| 分组框 `id` | 框 | **`n-` + nanoid**，流程内唯一 |
-| 分组框 `type` | 框 | `"group"` |
-| 分组框 `position` | 脚本写 | 画布绝对坐标（框的左上角，标题在框内） |
-| 分组框 `style` | 脚本写 | `width` / `height`，由子节点包络加留白算出（手算见下文公式） |
-| 分组框 `data.isLayoutNode` | 框 | `true`（解析器跳过） |
-| 分组框 `data.name` / `label` | 框 | `"GroupNode"` / `"group"`。不要去 `bundle nodes` 里找这个名字 |
-| 分组框 `data.summary` | 框 | 分区名，短词（如「上报」「查询」），与 `parameters.groupLabel` 相同 |
-| 分组框 `parameters.groupColor` | 框 | 默认墨青 `"#4a535c"`。多组可换色相，透明度和边框宽度不要跟着变 |
-| 分组框 `parameters.groupOpacity` | 框 | **默认 `0.03`**。合法 `0`–`1`。编排时仍显式写上 |
-| 分组框 `parameters.groupRadius` | 框 | 默认 `12` |
-| 分组框 `parameters.groupBorderStyle` | 框 | 默认 `"solid"`（还可 `dashed` / `dotted` / `none`） |
-| 分组框 `parameters.groupBorderWidth` | 框 | 默认 `1.5`（`0.5`–`8`，按 0.5 取整） |
-| 分组框 `parameters.groupBorderColor` | 框 | 默认 `"#4a535c"`。编排时写上，边框用实色，不跟填充透明度变淡 |
-| 子节点 `parentNode` | **组内每个组件必写** | 分组框的 `id`。不写就分不进去 |
-| 子节点 `position` | 脚本写 | **相对**分组框左上角。默认留白：左/右 **48**，上 **84**（框内标题 36 + 48），下 **48**；组内有回连时按绕线需要加宽 |
-| 子节点 `extent` | 建议 | `"parent"`，拖动时留在框内 |
-
-形状（子节点用 `parentNode` 挂到框上）：
-
-```json
-{
-  "id": "2",
-  "type": "group",
-  "position": { "x": 45, "y": 24 },
-  "style": { "width": "344px", "height": "195px" },
-  "zIndex": 0,
-  "data": {
-    "name": "GroupNode",
-    "label": "group",
-    "summary": "查询",
-    "isLayoutNode": true,
-    "parameters": {
-      "groupLabel": "查询",
-      "groupColor": "#4a535c",
-      "groupOpacity": 0.03,
-      "groupRadius": 12,
-      "groupBorderStyle": "solid",
-      "groupBorderWidth": 1.5,
-      "groupBorderColor": "#4a535c"
-    }
-  }
-}
-```
-
-```json
-{
-  "id": "2a",
-  "data": { "label": "child node" },
-  "position": { "x": 48, "y": 84 },
-  "parentNode": "2"
-}
-```
-
-真正写入画布时：框和子节点的 `id` 都换成 `n-` + nanoid；子节点补齐业务字段（`type: "default"`、`data.name` / `bundleName` / `bundleVersion` / `icon` / `summary` / `parameters`），并建议加 `"extent": "parent"`。
-
-| 才加 | 仍然不加 |
-|---|---|
-| 流程特别复杂时，**每个功能模块一个框** | 简单流程；一段里的成功/失败分支；每个节点一个框 |
-| 用户明确要求的分区 | 用户明确说不要分组；只改参数时给已有画布补框 |
-
-规则：
-
-- 组内每个执行节点都要写 `parentNode`，漏一个就漂在框外。边照常连业务节点，模块之间的边可以跨框；外层排版把每个框当成一个整体。
-- **分组标题在框内左上角**，不占框外高度。框的最上沿就是框 `y`。
-- 用脚本时下面几条都由脚本完成，跑完不要再改框的宽高或组内坐标。以下是手算兜底的规则。
-- **组内步进与画布完全相同**（「画布排列」那张表，含扇出加长），只是原点换成框内。组内若有互不连线的几段，同样按「多段并列」并排（`TB` 间隙 64、`LR` 间隙 72）。坐标是相对框的，不要写成画布绝对坐标。
-- **框的宽高与子节点位置**：先按组内步进从局部原点排好子节点，得到包络 `contentW × contentH`，再算 `width = max(contentW + 96, 240)`，`height = max(contentH + 132, 112)`。子节点整体放到相对框 `x = 48`、`y = 84` 起（内容比最小尺寸还小时在框内居中）。单节点就是 **344×195**，子节点在 `{48, 84}`；`TB` 主链两张（包络 248×200）是 **344×332**。
-- **组内有回连**（下游连回上游）时，控制台要在框内给回环留绕线通道，留白会加宽：`TB` 回环走偏向的一侧（不偏时走右侧），那一侧留白至少 **146**，回连起点所在的底边至少 **120**；`LR` 回环走底侧，底边留白至少 **146**，右边至少 **120**。回连终点是组内第一个节点时，`TB` 顶边、`LR` 左边也至少 **120**。多条回环重叠时每层再加 14。这种情况尽量用脚本。
-- **分组内部不折行、不拆排**：组内再长也保持一条主链。不要为了让框变小手动把组内节点折成两列。
-- **框外按框的外缘留空，分组当一个整体，它的出度不加长层距。** 不要用组内步进贴着框。
-  - `TB`：框下方的下一顶层盒子 `next.y = 框 y + height + 74`，并相对框水平居中；框上方的上一盒子 `框 y = 上一盒子 y + 63 + 74`。同一层里分组框和普通卡片 `y` 相同（顶齐）。画布第一层就是分组时 `框 y = 24`。
-  - `LR`：`next.x = 框 x + width + 140`，`框 x = 上一盒子 x + 248 + 140`。框与同层卡片按框体垂直居中。
-  - 互不连线的几个框按「多段并列」：`TB` 框顶齐在 `y = 24`、间隙 **64**；`LR` 左齐、上一框底边到下一框顶边间隙 **72**（`下一框 y = 上一框 y + height + 72`）。两框矩形不要相交。
-- 连到组内节点的边，label 中点落在**框外缘和下一张卡片之间**的空白里，不要落在框上。边仍连业务节点，不要连分组框。
-- 用户要的批注说明某个模块时写该框的 `parentNode`，排版后在框内空白或组内节点外侧；说明整张画布的不写 `parentNode`。
-- 不要用 `type: comment` 当分组框。不要给业务节点加 `isLayoutNode`。
-- 一层即可，不要嵌套分组，除非用户明确要求。
-- 背景写上默认墨青 `#4a535c`、透明度 **`0.03`**，边框实线 **`1.5`**、颜色 `#4a535c`、圆角 `12`。多组可以换 `groupColor` 的色相，`groupOpacity` 仍用 `0.03`，边框宽度仍用 `1.5`。`groupLabel` 写这个模块的短名。
+画布清晰优先于「少画一个节点」。两条支路都要做同一件事，但共用一个节点会让边斜穿、交叉或绕行时，每条支路各放一份（新 id，`name` / `parameters` / `credentials` 相同，`summary` 可写成「成功返回」「失败返回」）。线性流程、或支路沿流向正前方能干净接到同一个节点时仍共用。至少 3 个旁支汇到同一个没有出边的收尾节点时也保持共用。**不要复制触发器**。
 
 ## 边
 
-**同一对 `source` + `target` 只能有一条边。** 多个出口接到同一个下游时，不要拆成两条边，把这些 relation 全部放进这一条的 `data.relations[]`。
+**同一对 `source` + `target` 只能有一条边。** 多个出口接到同一个下游时，把这些 relation 全部放进这一条的 `data.relations[]`。
 
 | 字段 | 必填 | 含义 |
 |------|------|------|
-| `id` | 是 | 固定 `{source}_{target}`。不要带出口名（`…_Success`），一对节点只有这一个 id |
+| `id` | 是 | 固定 `{source}_{target}`。不要带出口名（`…_Success`） |
 | `type` | 建议 | `"default"` |
-| `source` | 是 | 源节点 `id` |
-| `target` | 是 | 目标节点 `id` |
-| `data.relations` | 是 | 数组，至少一项。接到**本 target** 的出口全部列在这里。**整份拷贝**源节点 `bundle node-relations` 里对应的对象，不要只写 `name` |
-| `data.relations[].name` | 是 | 必须是源节点 `node-relations` 里出现过的名字；MCP / RelationCollection 自定义关系用条目映射出的 `name`（如 `tools/get_user`） |
+| `source` / `target` | 是 | 节点 `id`。只连执行节点，不连分组框和批注 |
+| `data.relations` | 是 | 非空数组，接到本 target 的出口全部列在这里，**整份拷贝**源节点 `node-relations` 里对应的对象 |
+| `data.relations[].name` | 是 | 源节点出口目录里的名字；MCP / RelationCollection 自定义关系用条目映射出的 `name`（如 `tools/get_user`） |
 | `data.relations[].label` | 是 | 画布出口文字，用目录里的值（Success 一般 `成功`，Failure 一般 `失败`，IfNode 是 `是` / `否`）。缺了控制台不显示连线文字 |
-| `data.relations[].description` | 否 | 出口说明（Tooltip）。可以拷目录里的，也可以改写成本流程里这条出口的含义（如「查不到也继续，卡片仍用 open_id 展示」） |
-| `data.relations[].icon` | 视关系 | MCP 等自定义关系必拷（如 `mcp-tools` / `mcp-resources` / `mcp-prompts`）。目录没有 icon 的标准 Success/Failure 不要编造 |
-| `data.relations[]._id` | 视关系 | 自定义关系（MCP Tools/Resources/Prompts、RelationCollection）必拷，用来把出口和图标绑到这条边 |
-| `data.relations[].mcpKind` | 视关系 | MCP 自定义关系透传 `tools` / `resources` / `prompts` |
-| `label` | 建议 | 边自身标签，固定 `""`（出口文字在 `relations[].label`） |
+| `data.relations[].description` | 否 | 出口说明，可以照目录写，也可以改写成本流程里的含义（如「查不到也继续」） |
+| `data.relations[].icon` / `_id` / `mcpKind` | 视关系 | MCP 等自定义关系必拷，并同步到源节点 `data.relations`（同一份），否则画布左侧出口没有文字和图标 |
+| `label` | 建议 | 固定 `""` |
 | `zIndex` | 建议 | `2000` |
-| `sourceX` / `sourceY` / `targetX` / `targetY` | 否 | Vue Flow 锚点，生成时可省略（控制台会算） |
 
-规则：
-
-- **多个出口 → 同一下游**：一条边，`relations` 里放多项（如 Success + Failure 都接到下一节点）。出口文字由控制台摆放，不要拆边，也不要为此加长步进。
-- **多个出口 → 不同下游**：每个 target 一条边，各自 `relations` 只含该支路的出口。目标放在下一层的不同列/行，让每条边的中点分开，label 才能对上自己那条线。
-- 禁止两条边共用同一 `source` + `target`。
-- 同一条边里每个出口 `name` 只写一次。
-- 普通成功路径只用源节点目录里的成功项（通常 `name=Success`，`label=成功`）。
-
-错误写法：按出口拆成两条边，id 带出口名，Failure 缺 `label`：
-
-```json
-[
-  { "id": "n-get-sender_n-js-sender_Success", "source": "n-get-sender", "target": "n-js-sender",
-    "data": { "relations": [{ "name": "Success", "label": "成功", "description": "查到员工" }] } },
-  { "id": "n-get-sender_n-js-sender_Failure", "source": "n-get-sender", "target": "n-js-sender",
-    "data": { "relations": [{ "name": "Failure" }] } }
-]
-```
-
-正确写法：一条边，`id` 是 `{source}_{target}`，两个出口放进数组，每个都有 `name` 和 `label`（`description` 可选）：
+正确写法（两个出口接同一下游）：
 
 ```json
 {
@@ -425,142 +93,94 @@ Markdown 便签，不执行、不连线。解析器遇到 `data.isLayoutNode: tr
 }
 ```
 
-写完用 `scripts/check.mjs` 检查，`--fix` 能把错误写法合并成正确写法（见下文「检查脚本」）。
+错误写法是按出口拆成两条边、id 带出口名、出口缺 `label`。`check.mjs --fix` 能把它合并成上面的写法。
 
-多个输出接到同一下游的边（控制台结构）：
+MCP 自定义出口（源节点 `data.relations` 与边上都要同一份）：
+
+```json
+{ "label": "获取用户信息", "name": "tools/get_user", "description": "获取用户的可用信息", "_id": "t-ozynvj4p", "mcpKind": "tools", "icon": "mcp-tools" }
+```
+
+## 批注节点（便签，不执行）
+
+**默认不加。** 用户明确要求「写接口文档」「加说明 / 批注 / 便签」时才加：接口文档一个接口一张；不要复述 `summary`，不要每个节点贴一张。正文写法见 [comment-node.md](comment-node.md)。spec 里写 `{ "key": "doc", "comment": "正文", "width": 480, "parent": "分组 key" }`，脚本按下面的形状生成并排位。
 
 ```json
 {
-  "id": "n-k1V6QF1P_n-8aunB6B4",
-  "type": "default",
-  "source": "n-k1V6QF1P",
-  "target": "n-8aunB6B4",
+  "id": "n-Cm2xQ7aB",
+  "type": "comment",
+  "position": { "x": 0, "y": 0 },
+  "zIndex": 2,
+  "parentNode": "n-groupId",
+  "style": { "width": "480px", "height": "200px" },
   "data": {
-    "relations": [
-      {
-        "name": "Failure",
-        "label": "失败",
-        "description": "节点执行失败，消息路由到此链路"
-      },
-      {
-        "name": "Success",
-        "label": "成功",
-        "description": "节点执行成功，消息路由到此链路"
-      }
-    ]
-  },
-  "label": "",
-  "zIndex": 2000,
-  "sourceX": 456.875,
-  "sourceY": 990.875,
-  "targetX": 456.875,
-  "targetY": 1049.875
+    "name": "CommentNode", "label": "comment", "summary": "批注",
+    "hasInput": false, "hasOutput": false, "isLayoutNode": true, "isShowConfigOnAdd": false, "autoEdit": false,
+    "parameters": {
+      "commentMarkdown": "**接口说明**：创建一个新用户账号\n\n**请求方式**：`POST`",
+      "commentBackground": "ink", "commentBackgroundOpacity": 0, "commentBorderWidth": 1.5
+    }
+  }
 }
 ```
 
-MCP / 动态出口：自定义关系还要写到**源节点** `data.relations`（与边上那份相同），否则画布左侧出口没有文字和图标。标准 Success/Failure 节点可以不写 `data.relations`，但**边上仍要带 label**。
+- 不写 `bundleName` / `bundleVersion`，不连边，不写锚点。旧画布可能是 `type: "notes"`，与 `comment` 同等对待。
+- 宽默认 **320**，HTTP 接口文档 **480**（180–480）；高按正文估 `28 + 17×正文行数 + 20×标题行数`，限制在 50–480。已有正文时不要 `autoEdit: true`。
+- 说明某个模块时写该框的 `parentNode`，说明整张画布时不写。不要用批注当分组框。
 
-MCP 自定义出口示例（源节点 `data.relations` 与边上都要同一份）：
+## 节点分组
+
+**默认不分组。** 何时分组见 SKILL「生成画布」。分组框是布局节点：
 
 ```json
 {
-  "label": "获取用户信息",
-  "name": "tools/get_user",
-  "description": "获取用户的可用信息",
-  "_id": "t-ozynvj4p",
-  "mcpKind": "tools",
-  "icon": "mcp-tools"
+  "id": "n-Gq3aT9xK",
+  "type": "group",
+  "position": { "x": 45, "y": 24 },
+  "style": { "width": "344px", "height": "195px" },
+  "zIndex": 0,
+  "data": {
+    "name": "GroupNode", "label": "group", "summary": "查询", "isLayoutNode": true,
+    "parameters": {
+      "groupLabel": "查询", "groupColor": "#4a535c", "groupOpacity": 0.03, "groupRadius": 12,
+      "groupBorderStyle": "solid", "groupBorderWidth": 1.5, "groupBorderColor": "#4a535c"
+    }
+  }
 }
 ```
 
-## 最小可运行例子
-
-节点名、bundle 名、版本必须以当前环境的 CLI 输出为准。下面只说明形状；**真正生成时把 `n1` / `n2` 换成 `n-` + nanoid**（流程内唯一）。`position` / `sourcePosition` / `targetPosition` 是跑完 `scripts/layout.mjs` 的结果，编排时可以先不写。
-
-```json
-{
-  "nodes": [
-    {
-      "id": "n1",
-      "type": "default",
-      "position": { "x": 45, "y": 24 },
-      "sourcePosition": "bottom",
-      "targetPosition": "top",
-      "data": {
-        "name": "WebhookTriggerNode",
-        "bundleName": "official/core",
-        "bundleVersion": "1.0.0",
-        "isTrigger": true,
-        "icon": "webhook.svg",
-        "parameters": {},
-        "label": "Webhook",
-        "summary": "接收请求"
-      }
-    },
-    {
-      "id": "n2",
-      "type": "default",
-      "position": { "x": 45, "y": 161 },
-      "sourcePosition": "bottom",
-      "targetPosition": "top",
-      "data": {
-        "name": "JsFunctionNode",
-        "bundleName": "official/core",
-        "bundleVersion": "1.0.0",
-        "icon": "js.svg",
-        "parameters": { "code": "// 处理请求，返回成功标记\n// 入参：msg；出参：{ ok }\n\nreturn { ok: true };" },
-        "label": "JavaScript",
-        "summary": "处理请求"
-      }
-    }
-  ],
-  "edges": [
-    {
-      "id": "n1_n2",
-      "source": "n1",
-      "target": "n2",
-      "data": { "relations": [{ "name": "Success", "label": "成功", "description": "节点执行成功，消息路由到此链路" }] }
-    }
-  ],
-  "viewport": { "x": 0, "y": 0, "zoom": 1 },
-  "direction": "TB",
-  "errors": {}
-}
-```
-
-普通节点的输出在 payload 里包一层 `output`；触发器的 payload 在根级。占位名用 `msg`，不要用 `$json`。参数里的表达式按字段 `uiComponent` 选语法，JS 节点 `code` 分段加中文注释，见 [expressions.md](expressions.md)。
+- `position` / `style` 宽高和组内子节点的相对坐标由排版脚本算（留白左右 48、上 84、下 48）。标题在框内，框的最上沿就是框 `y`。
+- 不写 `bundleName` / `bundleVersion`，**不出现在任何 `edges` 里**；边照常连组内业务节点，可以跨框。不要去 `bundle nodes` 里找 `GroupNode`。
+- 组内每个执行节点都写 `parentNode`（+ `extent: "parent"`），漏一个就漂在框外。
+- `groupLabel` / `summary` 用这个模块的短名。多组可以换 `groupColor` 的色相，透明度 `0.03`、边框宽度 `1.5` 不变。一层即可，不要嵌套分组，除非用户明确要求。
 
 ## 校验顺序
 
-`buildify workflow validate` 按这个顺序报 `issues`。每次校验后把表单 ERROR 按节点 id 汇总写入画布顶层 `errors`：通过为 `{}`，未通过如 `"errors":{"n-k7mX2pL9":1}`。
-
-顺序：
+`buildify workflow validate` 按这个顺序报 `issues`：
 
 1. 结构（缺 `node.id` / `data.name` / `data.bundleName` / `data.bundleVersion` / 边的 source/target / relation.name）
 2. 节点在当前工作区是否存在且可访问
-3. `data.parameters` 对照 `properties_json`（未知键、缺必填、枚举非法）
-4. `edges[].data.relations[].name` 对照源节点 `relations_json`
+3. `data.parameters` 对照表单（未知键、缺必填、枚举非法；Collection / Fixed 里没有显示条件的必填子字段也会报，如 Webhook 的 `options.cors`）
+4. `edges[].data.relations[].name` 对照源节点出口
 5. `data.credentials` 对照项目里已有凭证（`bundleName + type + name`）
-6. 图：至少一个触发器、孤立节点、环。**环允许**，不要当错误去拆边；编排时确认环上有离开循环的出口（见 SKILL「循环允许，但必须有出口」）。缺触发器和孤立节点仍要修
-7. 展示：目录里有 `icon` 但画布 `data.icon` 为空时记 **WARNING**（控制台节点图标会丢）
-8. 展示：边上 `relations[]` 缺 `label`（或自定义关系缺 `icon` / `_id`）时记 **WARNING**（控制台出口文字/图标会丢）
+6. 图：至少一个触发器、孤立节点、环。**环允许**，但环上要有离开循环的出口；缺触发器和孤立节点仍要修
+7. 展示：目录里有 `icon` 但画布 `data.icon` 为空时记 **WARNING**
+8. 展示：边上 `relations[]` 缺 `label`（或自定义关系缺 `icon` / `_id`）时记 **WARNING**
 
-`level=ERROR` 必须修，**环除外**。`WARNING` 尽量修。只剩环时 `valid: false`、退出码 4 也可以 save-draft / 试跑 / 发布。
+`level=ERROR` 必须修，环除外。`WARNING` 也要修。同一对节点两条边、边 id 不对、图标用错这几类 validate 不一定能发现，靠 `scripts/check.mjs`。
 
 ## 检查脚本
 
-`workflow validate` 之前先跑 `scripts/check.mjs`，查边、出口和图标：
-
 ```bash
-node <skill 目录>/scripts/check.mjs ./flow.json [--fetch [--profile NAME]] [--catalog FILE ...] [--fix] [-o out.json]
+node <skill 目录>/scripts/check.mjs ./flow.json [--catalog-dir DIR] [--fetch [--profile NAME]] [--catalog FILE ...] [--fix] [-o out.json]
 ```
 
 | 项 | 说明 |
 |---|---|
-| 目录 | `--fetch` 按画布里的 `bundleName` / `bundleVersion` 调 `bundle nodes`，按边的源节点调 `bundle node-relations`。离线时用 `--catalog` 传这两条命令保存下来的 `--json` 输出。都不给时只查结构、格式和同类一致性 |
-| 边 | 同一对 `source` + `target` 只能一条；`id` = `{source}_{target}`；`data.relations` 是非空数组；出口 `name` 不重复、在目录里存在；每个出口有 `name` 和 `label`（`description` 不查）；边自身 `label` 为空 |
-| 图标 | 执行节点必须有 `data.icon`，是图标文件名（不能是 URL、路径、emoji）；和目录里这个节点类型的 `icon` 一致；同一类型的节点图标相同。`label` 与目录不同、`isTrigger` 不对也会报 |
-| `--fix` | 合并重复边（出口合进一个数组）、改正边 `id`、从目录补出口 `label`、图标、`isTrigger`，清空边自身 `label`。不动 `description`。目录里没有的出口名不改，仍报 ERROR |
+| 目录 | `--catalog-dir` 读 `catalog.mjs` 的缓存，每个包只取和画布 `bundleVersion` 一致的那份；`--fetch` 把还缺的按画布版本拉下来。都不给时只查结构、格式和同类一致性 |
+| 边 | 同一对 `source` + `target` 只能一条；`id` = `{source}_{target}`；`data.relations` 是非空数组；出口 `name` 不重复、在目录里存在；每个出口有 `name` 和 `label`；边自身 `label` 为空 |
+| 图标 | 执行节点必须有 `data.icon`，是图标文件名；和目录里这个节点类型的 `icon` 一致；同一类型的节点图标相同。`label` 与目录不同、`isTrigger` 不对也会报 |
+| `--fix` | 合并重复边、改正边 `id`、从目录补出口 `label`、图标、`isTrigger`，清空边自身 `label`。不动 `description`。目录里没有的出口名不改，仍报 ERROR |
 | 退出码 | 0 没有 ERROR（可能有 WARNING）；1 还有 ERROR；3 文件、参数或拉目录失败 |
 
-合并了重复边之后结构变了，再跑一次排版脚本。目录里两个类型共用一个图标是正常的（如 Webhook 触发器和 Webhook 应答都用 `webhook.svg`），脚本按类型对照，不会把这当错误。
+合并了重复边之后结构变了，再跑一次排版脚本。目录里两个类型共用一个图标是正常的（如 Webhook 触发器和 Webhook 应答都用 `webhook.svg`）。

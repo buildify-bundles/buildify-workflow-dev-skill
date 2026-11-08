@@ -45,23 +45,31 @@ git -c protocol.version=1 clone https://gitee.com/buildify/buildify-workflow-dev
 
 | 文件 | 内容 |
 |---|---|
-| `SKILL.md` | 主入口：编排清单、画布硬规则、多段画布、缺软件包或节点时的处理、项目/流程/服务器/凭证点选、HTTP 接口与试跑、失败告警、发布 |
-| `reference/missing-bundle.md` | 缺软件包或节点：默认方案（bundle-dev 规范 + 官方文档、软件包信息、图标）、一次确认、交给 bundle-dev 建包开发发布后回来 |
-| `reference/report.md` | 保存 / 试跑 / 发布后的汇报表格与状态符号 |
-| `install.md` | 把 `buildify-workflow-dev` 装到各客户端 skills 目录 |
-| `reference/cli.md` | `buildify` CLI 命令与退出码 |
-| `reference/flow-json.md` | 画布 JSON：`n-` + nanoid、`errors`、`direction`（TB/LR）、排版脚本用法，以及没有 Node 时的手算间距 / 分组 / 多段 / 批注 |
-| `scripts/layout.mjs` | 排版脚本：先连线，最后统一排版。`node scripts/layout.mjs flow.json [--direction TB\|LR] [--group <分组 id>] [-o out.json] [--check]` |
-| `scripts/check.mjs` | 保存前检查：一对节点一条边、边 `id`、出口数组与 `name` / `label`、节点图标对照目录。`node scripts/check.mjs flow.json --fetch [--fix]` |
-| `scripts/vendor/` | 内置的 `@dagrejs/dagre` 1.1.4（MIT，见 `dagre.LICENSE`），脚本不用 `npm install` |
-| `reference/expressions.md` | 按组件写表达式：JSON 默认 `={{msg.xxx}}`、SQL `#{}` `${}`、文本 `{{ }}`；JS 节点分段注释；飞书 `lark_md` 与失败原因 |
-| `reference/recipes.md` | 常见骨架 |
+| `SKILL.md` | 主入口：编排清单、脚本速查、spec 规则、多段画布、缺软件包或节点时的处理、项目/流程/服务器/凭证点选、HTTP 接口认证、失败告警、发布 |
+| `reference/recipes.md` | spec 骨架：定时拉取推送、Webhook 应答、条件分支、改已有、分组与多段（都已对服务端校验通过） |
+| `reference/cli.md` | `buildify` CLI 命令、参数与退出码；改名 / 服务器 / 凭证 / 删除；部署记录与历史版本 |
+| `reference/flow-json.md` | 画布 JSON 字段：节点、边、批注、分组、校验顺序、检查脚本 |
+| `reference/layout-manual.md` | 排版细节；没有 Node 时的手算间距 / 分组 / 多段 / 批注 |
+| `reference/expressions.md` | 按组件写表达式：JSON 默认 `={{msg.xxx}}`、SQL `#{}` `${}`、文本 `{{ }}`；JS 返回值即整个 `msg`；JS 节点分段注释；飞书 `lark_md` 与失败原因 |
+| `reference/credentials.md` | 凭证三选一与现在创建 |
+| `reference/http.md` | HTTP 接口的访问地址、连通检测与试跑 |
 | `reference/comment-node.md` | 批注节点字段 |
+| `reference/report.md` | 保存 / 试跑 / 发布后的汇报表格与状态符号 |
+| `reference/missing-bundle.md` | 缺软件包或节点：默认方案（bundle-dev 规范 + 官方文档、软件包信息、图标）、一次确认、交给 bundle-dev 建包开发发布后回来 |
+| `install.md` | 把 `buildify-workflow-dev` 装到各客户端 skills 目录 |
+| `scripts/catalog.mjs` | 并行拉节点目录、表单、出口存进缓存并打印摘要。`node scripts/catalog.mjs fetch -b buildify/core -n HttpRequestNode,JsFunctionNode` |
+| `scripts/build.mjs` | 按 spec 生成画布（id、目录字段、默认值、出口对象、凭证、分组、多段原点）并排版；`--base` 改已有草稿。`node scripts/build.mjs spec.json -o flow.json` |
+| `scripts/layout.mjs` | 排版脚本。`node scripts/layout.mjs flow.json [--direction TB\|LR] [--group <分组 id>] [-o out.json] [--check]` |
+| `scripts/check.mjs` | 保存前检查：一对节点一条边、边 `id`、出口数组与 `name` / `label`、节点图标对照目录。`node scripts/check.mjs flow.json --catalog-dir /tmp/buildify-catalog --fetch [--fix]` |
+| `scripts/result.mjs` | 整理 validate / test-run / deploy 的输出，写回顶层 `errors`。`node scripts/result.mjs validate validate.json --flow flow.json --write-errors` |
+| `scripts/lib/catalog-store.mjs` | 目录缓存的读写与摘要，上面几个脚本共用 |
+| `scripts/smoke.sh`、`scripts/fixtures/` | 离线冒烟测试：`bash scripts/smoke.sh`（改脚本后跑） |
+| `scripts/vendor/` | 内置的 `@dagrejs/dagre` 1.1.4（MIT，见 `dagre.LICENSE`），脚本不用 `npm install` |
 
 ## 依赖
 
 - `buildify-cli` 1.2.0+（Python 3.10+）。安装时 Agent 会自己装，优先用 `uv tool install buildify-cli`，本机 Python 版本不够也不用管
-- Node 18+（可选，跑排版和检查脚本用；没有时 Agent 按 flow-json.md 手算坐标、人工核对边和图标）
+- Node 18+（强烈建议，拉目录、生成画布、排版、检查、整理结果都靠它；没有时 Agent 按 layout-manual.md 手算坐标、人工核对边和图标，慢很多也更容易错）
 - buildify-cli 密钥（`keyId.secret`）：控制台 **系统设置 → API Keys → buildify-cli 密钥** 创建，只在创建时显示一次。发给 Agent 即可，它会写入 `~/.buildifyrc`；自己配置用下面的命令
 
 ```bash
@@ -93,4 +101,4 @@ buildify --json key test
 - 「打开『订单查询』这条流程，加一个按手机号查询的分支」
 - 「把『订单查询』试跑一下，没问题就发布」
 
-Agent 会查节点、生成并排版画布、校验、保存草稿、试跑，确认版本号后发布，只在项目、服务器、凭证缺的时候让你点选。默认竖排、不写接口文档和批注、只有特别复杂的流程才按功能模块分组、试跑通过后发布；要改就在需求里说「横排」「写一份接口文档」「按模块分组」「只保存草稿」。
+Agent 会查节点、写一份简表交给脚本生成并排版画布、校验、保存草稿、试跑，确认版本号后发布，只在项目、服务器、凭证缺的时候让你点选。默认竖排、不写接口文档和批注、只有特别复杂的流程才按功能模块分组、试跑通过后发布；要改就在需求里说「横排」「写一份接口文档」「按模块分组」「只保存草稿」。

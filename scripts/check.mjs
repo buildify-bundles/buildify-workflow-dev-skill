@@ -2,17 +2,20 @@
 /**
  * 保存草稿前检查 flow.json 的边、出口关系和节点图标。
  *
- *   node scripts/check.mjs flow.json [--fetch [--profile NAME]] [--catalog FILE ...] [--fix] [-o out.json]
+ *   node scripts/check.mjs flow.json [--catalog-dir DIR] [--fetch [--profile NAME]] [--catalog FILE ...] [--fix] [-o out.json]
  *
  * 目录来源（可同时用）：
- *   --fetch           按画布里用到的 bundle 调 `buildify --json bundle nodes` / `bundle node-relations`
+ *   --catalog-dir DIR catalog.mjs / build.mjs 的缓存目录。每个包只取和画布 bundleVersion 一致的那份；
+ *                     画布上同一个包用了两个版本时不取，交给 --fetch
+ *   --fetch           按画布里用到的 bundle 调 `buildify --json bundle nodes` / `bundle node-relations`，已有目录的跳过
  *   --catalog FILE    读已保存的上述两条命令的 --json 输出
  * 没有目录时只做结构、格式和一致性检查，图标是否用对、出口名是否存在要靠目录才能判断。
  *
  * 退出码：0 没有 ERROR（可能有 WARNING）；1 还有 ERROR；3 文件、参数或拉目录失败。
  */
 import { execFileSync } from 'node:child_process'
-import { readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { catalogFile } from './lib/catalog-store.mjs'
 
 const DECORATION_TYPES = new Set(['text', 'comment', 'notes'])
 const ICON_FILE = /^[A-Za-z0-9][A-Za-z0-9._-]*\.(svg|png|jpe?g|gif|webp)$/i
@@ -22,14 +25,15 @@ function fail(message, code = 3) {
   process.exit(code)
 }
 
-const USAGE = 'usage: node scripts/check.mjs flow.json [--fetch [--profile NAME]] [--catalog FILE ...] [--fix] [-o out.json]\n'
+const USAGE = 'usage: node scripts/check.mjs flow.json [--catalog-dir DIR] [--fetch [--profile NAME]] [--catalog FILE ...] [--fix] [-o out.json]\n'
 
 function parseArgs(argv) {
-  const args = { file: null, out: null, fix: false, fetch: false, profile: null, catalogs: [] }
+  const args = { file: null, out: null, fix: false, fetch: false, profile: null, catalogs: [], catalogDir: null }
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]
     if (arg === '--fix') args.fix = true
     else if (arg === '--fetch') args.fetch = true
+    else if (arg === '--catalog-dir') args.catalogDir = argv[++i] ?? ''
     else if (arg === '--profile') args.profile = argv[++i]
     else if (arg === '--catalog') args.catalogs.push(argv[++i])
     else if (arg === '-o' || arg === '--out') args.out = argv[++i]
@@ -41,6 +45,7 @@ function parseArgs(argv) {
   }
   if (!args.file) fail(`缺少 flow.json 路径。${USAGE}`)
   if (args.catalogs.some(file => !file)) fail('--catalog 后面要跟文件路径')
+  if (args.catalogDir === '') fail('--catalog-dir 后面要跟目录')
   if (args.profile === undefined) fail('--profile 后面要跟配置档名称')
   if (args.out && !args.fix) fail('-o 只和 --fix 一起用')
   return args
@@ -120,6 +125,38 @@ function runCli(cliArgs, profile) {
     fail(`buildify ${argv.join(' ')} 失败${reason}: ${payload.msg ?? ''}`)
   }
   return payload
+}
+
+/** 从缓存目录取版本和画布一致的目录文件，返回文件列表。 */
+function catalogFilesFromDir(dir, execNodes, edges) {
+  const versions = new Map()
+  for (const node of execNodes) {
+    const { bundleName, bundleVersion } = node.data ?? {}
+    if (!bundleName) continue
+    if (!versions.has(bundleName)) versions.set(bundleName, new Set())
+    versions.get(bundleName).add(bundleVersion == null ? '' : String(bundleVersion))
+  }
+  const files = []
+  const usable = new Map()
+  for (const [bundleName, set] of versions) {
+    const [version] = set
+    if (set.size !== 1 || !version) continue
+    const file = catalogFile(dir, bundleName, version)
+    if (!existsSync(file)) continue
+    files.push(file)
+    usable.set(bundleName, version)
+  }
+  const byId = new Map(execNodes.map(node => [node.id, node]))
+  const seen = new Set()
+  for (const edge of edges) {
+    const data = byId.get(edge?.source)?.data
+    const version = usable.get(data?.bundleName)
+    if (!version || !data?.name || seen.has(data.name + data.bundleName)) continue
+    seen.add(data.name + data.bundleName)
+    const file = catalogFile(dir, data.bundleName, version, data.name, 'relations')
+    if (existsSync(file)) files.push(file)
+  }
+  return files
 }
 
 function fetchCatalog(catalog, execNodes, edges, profile) {
@@ -340,7 +377,9 @@ function main() {
   const byId = new Map(flow.nodes.filter(node => node?.id).map(node => [node.id, node]))
   const execNodes = flow.nodes.filter(isExecNode)
   const catalog = createCatalog()
-  for (const file of args.catalogs) addToCatalog(catalog, readJson(file, '目录'), file)
+  const edgeList = Array.isArray(flow.edges) ? flow.edges : []
+  const dirFiles = args.catalogDir ? catalogFilesFromDir(args.catalogDir, execNodes, edgeList) : []
+  for (const file of [...dirFiles, ...args.catalogs]) addToCatalog(catalog, readJson(file, '目录'), file)
   if (args.fetch) fetchCatalog(catalog, execNodes, Array.isArray(flow.edges) ? flow.edges : [], args.profile)
 
   const report = createReport()

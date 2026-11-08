@@ -1,31 +1,26 @@
 ---
 name: buildify-workflow-dev
 description: >-
-  Builds Buildify workflows from installed Bundle nodes with the buildify CLI:
-  discovers bundles and node schemas, writes the canvas flow.json (layout,
-  edges, expressions, comments, groups), binds credentials, validates, saves
-  drafts, test-runs (HTTP webhooks via /@test) and deploys to a worker. Use
-  when the user creates, edits, test-runs or publishes a Buildify workflow, or
-  mentions 编排流程, 工作流, flow.json, 画布, Webhook 接口, HTTP 接口, 试跑,
-  @test, 发布, 版本号, 凭证, 服务器, 节点管理, 批注, 节点分组, 横排, 竖排,
-  连线标签, 多段, 独立接口, 入站认证, 访问地址, 飞书卡片, 失败告警, 缺少节点,
-  验签, 回调, 微信支付, 支付宝, Stripe,
-  部署记录, 历史版本, 绑定服务器, 换服务器, 删除流程, 改名, 改凭证, 删除凭证,
-  凭证被哪些流程使用.
-  When no package or node covers the need, says so and proposes a default
-  plan (buildify-bundle-dev conventions plus the vendor's official API docs,
-  package name and icons); after one confirmation, or none when the user
-  already asked for it, has buildify-bundle-dev create the package, develop
-  and publish it, then resumes orchestration.
+  Builds Buildify workflows from installed Bundle nodes with the buildify CLI
+  and bundled scripts: discovers node schemas, generates the canvas flow.json
+  from a short spec, lays it out, validates, saves drafts, test-runs (HTTP
+  webhooks via /@test) and deploys to a worker. When no package or node covers
+  the need, proposes a plan and has buildify-bundle-dev build and publish it,
+  then resumes. Use when the user creates, edits, test-runs or publishes a
+  Buildify workflow, or mentions 编排流程, 工作流, flow.json, 画布, Webhook 接口,
+  HTTP 接口, 试跑, @test, 发布, 版本号, 凭证, 服务器, 节点管理, 批注, 节点分组,
+  横排, 竖排, 多段, 独立接口, 入站认证, 访问地址, 飞书卡片, 失败告警, 缺少节点,
+  验签, 回调, 微信支付, 支付宝, Stripe, 部署记录, 历史版本, 绑定服务器, 换服务器,
+  删除流程, 改名, 改凭证, 删除凭证, 凭证被哪些流程使用.
 ---
 
 # Buildify 流程编排
 
-用已安装的 Bundle 节点编排工作流：发现节点、写画布 JSON、校验、保存草稿、试跑，试跑通过后确认版本号再发布到已确认的服务器，并用表格汇报。
+用已安装的 Bundle 节点编排工作流：发现节点、写一份简表（spec）生成画布、校验、保存草稿、试跑，试跑通过后确认版本号再发布到已确认的服务器，并用表格汇报。
 
-- 和 `buildify-bundle-dev` 分工：那个「做节点」，这个「用节点编流程」。本 skill 的规则不用来写 Bundle 源码。没有对应软件包或节点时，先说明不存在，给出按官方文档实现的默认方案，确认后交给 bundle-dev 建包、开发和发布（没装先安装），发布后回来接着编排。
-- 唯一接口是 `buildify` CLI（PyPI 包 `buildify-cli`），它调 `buildify-open-api-server`。不要猜 REST 路径，不清楚先 `buildify help`。
-- 机器可读输出一律加 `--json`，按退出码分支（见 [reference/cli.md](reference/cli.md)「退出码」）。
+- 和 `buildify-bundle-dev` 分工：那个「做节点」，这个「用节点编流程」。没有对应软件包或节点时，先说明不存在，给出按官方文档实现的默认方案，确认后交给 bundle-dev 建包、开发和发布，发布后回来接着编排。
+- 唯一接口是 `buildify` CLI（PyPI 包 `buildify-cli`）。不要猜 REST 路径，不清楚先 `buildify help`。机器可读输出一律加 `--json`，按退出码分支（见 [reference/cli.md](reference/cli.md)「退出码」）。
+- 目录、生成画布、整理结果都用本 skill 的 `scripts/`（Node 18+，不用装依赖），**不要临时写 python / jq 去抽字段**。下文 `$S` 指 `<本 skill 目录>/scripts`。
 
 ## 工作流
 
@@ -35,20 +30,18 @@ description: >-
 流程编排进度：
 - [ ] 1. CLI 就绪：buildify --json key test（见「工作区与密钥」）
 - [ ] 2. 定项目、流程（见「沿用已有，只问缺的」）
-- [ ] 3. 定服务器：改已有先 workflow workers（只要 deleteStatus 0）；画布方向默认 TB，试跑通过后默认发布
-- [ ] 4. 发现节点：bundle list → bundle nodes → 只对要放进画布的节点拉 node-properties / node-relations；没有软件包或缺节点 → 默认方案确认一次，bundle-dev 建包、开发、发布后回到这一步（见「环境里没有对应节点」）
-- [ ] 5. 凭证：只问空槽，三选一
-- [ ] 6. 生成 flow.json：先写节点和连线，再 node scripts/layout.mjs 统一排版（见「生成画布 JSON」）
-- [ ] 7. node scripts/check.mjs --fetch 查边、出口和图标；再 workflow validate 闭环，ERROR 按节点写回顶层 errors
+- [ ] 3. 定服务器：改已有先 workflow workers（只要 deleteStatus 0）；画布默认 TB，试跑通过后默认发布
+- [ ] 4. 发现节点：bundle list -k → node $S/catalog.mjs fetch -b 包 -n 节点,节点 …（一次拉齐要用的节点）；缺包或缺节点 → 见「环境里没有对应节点」
+- [ ] 5. 凭证：只问空槽，三选一（reference/credentials.md）
+- [ ] 6. 写 spec → node $S/build.mjs spec.json -o flow.json（补齐字段并排版）；WARNING 逐条处理
+- [ ] 7. node $S/check.mjs flow.json --catalog-dir /tmp/buildify-catalog --fetch → workflow validate > validate.json → node $S/result.mjs validate validate.json --flow flow.json --write-errors
 - [ ] 8. save-draft（新建先 workflow create）
-- [ ] 9. test-run（HTTP 接口先测访问地址，见「试跑 HTTP 接口」）
-- [ ] 10. 确认版本号和发布说明 → workflow deploy --wait → 发布表
+- [ ] 9. test-run > test-run.json → node $S/result.mjs test-run test-run.json --flow flow.json（HTTP 接口先测访问地址，见 reference/http.md）
+- [ ] 10. 确认版本号和发布说明 → workflow deploy --wait > deploy.json → node $S/result.mjs deploy deploy.json → 发布表
 ```
 
-步骤补充：
-
 - **2–5 缺什么才问什么**，同一次提问里问完。缺口没回复前不要 `workflow create` / `save-draft` / `test-run` / `deploy`。
-- **4**：没有对应软件包或节点时停下编排，按「环境里没有对应节点」给方案、确认、开发发布，然后从这一步继续。`bundle doc` 只在参数含义不清时读。目录用 `bundle nodes -b 包名 -V 版本 --json` 拉，输出存到临时文件（如 `/tmp/buildify-catalog/<包名>@<版本>.nodes.json`），同一次拉的 `bundle node-relations -b 包名 -n 节点` 存成 `<包名>@<版本>.<节点>.relations.json`，文件名里的版本就是 `-V` 的值，包名里的 `/` 换成 `__`。只把要用的字段读进对话，不要整份打印。
+- **4**：`catalog.mjs` 打印每个节点的 `icon` / `label` / 触发器、参数（必填、`uiComponent`、枚举、默认值、显示条件）、凭证槽和出口，写参数就照它。`bundle doc` 只在参数含义仍不清时读。
 - **8**：改已有就打开该草稿再 save-draft。新建用用户给的名称，没给就用展示过的建议名。
 - **9**：凭证选了「使用时再选」则停在草稿，不试跑。用户选了「只保存草稿」可以试跑，但不进入步骤 10。
 - **10**：只在试跑通过、且用户没选「只保存草稿」时进行。见「发布与汇报」。
@@ -57,95 +50,61 @@ description: >-
 
 | 场景 | 读 |
 |---|---|
-| 命令、参数、退出码、推荐循环、save-draft 冲突、改服务器、改/删凭证、删除、部署记录、历史版本 | [reference/cli.md](reference/cli.md) |
-| 画布 JSON 字段、排版脚本、边、批注、分组、多段并列、校验顺序 | [reference/flow-json.md](reference/flow-json.md)。有 Node 时只读「顶层」「排版脚本」「节点（执行相关）」「边」，要分组再读「节点分组」的字段表；「手算兜底」「多段并列」里的坐标表和示例只在没有 Node 时读 |
+| 命令、参数、退出码、save-draft 冲突、改服务器、改/删凭证、删除、部署记录、历史版本 | [reference/cli.md](reference/cli.md) |
+| spec 骨架：定时拉取推送、Webhook 应答、分支、改已有、分组 | [reference/recipes.md](reference/recipes.md) |
+| 画布 JSON 字段、边、分组、批注（手改 JSON 或读懂已有草稿时） | [reference/flow-json.md](reference/flow-json.md) |
 | 参数里的表达式（按 `uiComponent`）、JS 代码注释、飞书卡片与失败原因 | [reference/expressions.md](reference/expressions.md) |
-| 用户要求时才加的批注：字段、功能说明、HTTP 接口文档正文 | [reference/comment-node.md](reference/comment-node.md)（用户没要求批注或接口文档时不读） |
-| 常见骨架：Webhook 应答、定时落库、分支复制、改已有、分组 | [reference/recipes.md](reference/recipes.md)（节点名仍须用 CLI 核实） |
+| 凭证三选一、现在创建 | [reference/credentials.md](reference/credentials.md) |
+| HTTP 接口的访问地址、连通检测、试跑 | [reference/http.md](reference/http.md) |
+| 用户要求时才加的批注、HTTP 接口文档正文 | [reference/comment-node.md](reference/comment-node.md) |
 | 保存 / 试跑 / 发布后的汇报表格与状态符号 | [reference/report.md](reference/report.md) |
-| 没有软件包或缺节点：默认方案、确认模板、建包、开发发布后回来 | [reference/missing-bundle.md](reference/missing-bundle.md) |
+| 没有软件包或缺节点 | [reference/missing-bundle.md](reference/missing-bundle.md) |
+| 没有 Node，只能手算坐标 | [reference/layout-manual.md](reference/layout-manual.md) |
 
-## 生成画布 JSON（步骤 6）
+## 脚本速查
 
-按 [flow-json.md](reference/flow-json.md) 写。下面是最容易写错的硬规则；坐标数值的细则只在 flow-json.md。
-
-**先连线，最后统一排版。** 坐标不要手算：
-
-1. 写齐 `nodes`（业务字段、`parentNode`）和 `edges`，顶层写 `direction` 和 `errors`。执行节点的 `position` 可以不写。
-2. 结构定下来后运行本 skill 目录下的排版脚本（需要 Node 18+，不用装依赖）：
-
-   ```bash
-   node <本 skill 目录>/scripts/layout.mjs ./flow.json            # 原地写回
-   node <本 skill 目录>/scripts/layout.mjs ./flow.json --check    # 只检查，坐标要变时退出 1
-   ```
-
-   脚本移植自控制台「自动排列」（`applyLayout.js`），算出的执行节点坐标、锚点、分组框尺寸、批注位置与控制台一致。退出码 3 是图结构有错（边指向不存在的节点、连到分组框或批注、`parentNode` 不是分组框），按提示修好再跑。
-3. 之后每次增删节点或边、改 `parentNode`、换方向（`--direction TB|LR`），都重新跑一次，再进入步骤 7。
-
-改已有草稿：只在用户要求重排、或增删了节点 / 边时才跑，并告诉用户整张画布会按自动排列重排。用户手动调过布局时先问再跑。改动只在某个分组里、或用户只要求整理某个分组时，用 `--group <分组 id>` 只排这个分组（同控制台分组右键「自动排列组内节点」），组外坐标不动。没有 Node 时按 flow-json.md「手算兜底」写坐标。
-
-- **节点 id**：每个新节点（含批注、分组框、复制出来的节点）用 `n-` + 8 位 nanoid，流程内唯一。不要用 `n1` / `trigger` 这类可读名。已有草稿的旧 id 不要改。边 `id` = `{source}_{target}`。
-- **顶层**：必写 `direction`（默认 `TB`；用户要横排才 `LR`；改已有沿用草稿）和 `errors`（先 `{}`）。
-- **节点字段**：`name` / `bundleName` / `bundleVersion` / `icon` / `label` / `isTrigger` 从 `bundle nodes` / `node-properties` 原样拷贝。**图标按节点类型逐个查目录**，不要凭名字猜（`JsFunctionNode` 是 `js.svg`，不是 `code.svg`；`HttpRequestNode` 是 `request.svg`），不要借用别的节点或软件包本身的图标，也不要写 URL。`summary` 写这颗节点在本流程里的职责，**≤8 字**（如「接收请求」「查询设备」），画布默认显示它，不要照抄目录 `summary`。
-- **坐标**：交给排版脚本。`position`、`sourcePosition` / `targetPosition`、分组框 `style` 宽高都由脚本写，不要在脚本输出后再手动挪动。多段时每段写一个粗略原点；用户要的批注写 `{0, 0}`。见 flow-json.md「画布排列」。
-- **分支**：以不交叉为准。能沿流向干净汇合才共用下游；否则各支路复制一份配置相同的节点（新 id）。不要复制触发器。
-- **循环允许，但必须有出口。** 用户要重试、轮询、等到条件满足时，从下游出口连回上游入口即可。不要为了消环拆边或复制节点。回连由控制台绕线，节点仍按主链排，不要把下游再挪到上游旁边。环上至少要有一条边离开循环（If / Switch 的另一支、失败出口、次数用尽、超时等）。所有出口都连回环内就是死循环：补上退出条件再保存，条件不清楚就问用户。
-- **边**：每两个节点之间只有一条边，`id` 固定 `{source}_{target}`，不要按出口拆成 `…_Success` / `…_Failure` 两条。接到同一下游的多个出口（如 Success+Failure）全部放进这条边的 `data.relations[]` 数组。每个 relation 必须有 `name` 和 `label`，从 `node-relations` 整份拷贝；`description` 可选，可以照目录写，也可以改写成本流程里的含义（如「查不到也继续」）。MCP 自定义关系再带 `_id` / `icon` / `mcpKind`，并同步到源节点 `data.relations`。
-- **表达式**按字段 `uiComponent` 选语法：`JsonExpressionInput` 默认整字段 `"={{msg.xxx}}"` 保留类型，要拼字符串才写 `"=前缀 {{msg.xxx}}"`（`=` 必须是第一个字符，`{{ }}` 里不运算）；`SqlEditor` 用 `#{}` / `${}`；文本及其他用 `{{ }}`。见 [expressions.md](reference/expressions.md)。
-- **JS 节点** `parameters.code` 分段并写中文注释：顶部写入参/出参，每段用 `// --- 段名 ---` 隔开。
-- **默认不加批注，也不写接口文档。** 用户没有特别要求时，画布上不放接口说明、功能说明或节点便签，批注会把排版挤乱。接口的方法、路径、访问地址写在对话的汇报里。用户明确要求「写接口文档 / 加说明 / 加批注」时才加，写法见 comment-node.md；初始坐标写 `{0, 0}`，挂在哪个分组就写哪个 `parentNode`，位置交给脚本。
-- **默认不分组，特别复杂的流程按功能模块分组。** 简单流程（一段十来个执行节点以内，或几个各自很短的独立接口）不加分组框。流程特别复杂时（执行节点大约 15 个以上，或一段里能清楚分出几块职责，如「接收校验」「下单扣款」「通知告警」），按功能模块分组：一个模块一个框，模块可以是一段里连续的一截，也可以是一整段独立接口。成功/失败分支跟着它所在的模块，不要为分支单独加框，也不要每个节点一个框。用户明确要求分组时照做，明确不要时不分。只改参数、不改结构时，不要为了补分组去重排已有画布。组内节点必须写 `parentNode`，边照常连组内业务节点，可以跨框；框的宽高和组内坐标交给脚本（标题在框内，左右留白 48，上留白 84，下留白 48，有回连时自动加宽）；框背景写 `groupColor: "#4a535c"`、`groupOpacity: 0.03`、`groupBorderColor: "#4a535c"`、`groupBorderStyle: "solid"`、`groupBorderWidth: 1.5`、`groupRadius: 12`。`groupLabel` 用这个模块的短名，不要固定写成某一个词。
-- **两段及以上互不连线**时按下一节生成。
-
-### 保存前检查边和图标
-
-排版后、`workflow validate` 前跑一次：
-
-```bash
-node <本 skill 目录>/scripts/check.mjs ./flow.json --catalog /tmp/buildify-catalog/official__core@1.0.0.nodes.json \
-     --catalog /tmp/buildify-catalog/official__core@1.0.0.WebhookTriggerNode.relations.json --fetch --fix
-```
-
-**步骤 4 存下的目录，版本对得上才复用。** 对每个软件包，看画布上这个包所有执行节点的 `bundleVersion`：都等于存下的文件名里的版本时，把这个包的 nodes 和 relations 文件都用 `--catalog` 传进去；版本不同、当时没记版本、或同一个包在画布上用了两个版本时，这个包的文件一个都不传。`--fetch` 始终带上：已经由 `--catalog` 给了的包和出口它会跳过，其余按画布上的 `bundleVersion` 加 `-V` 去拉。检查脚本只按包名认目录、不看版本，传进一份旧版本的目录会让它跳过重拉，对照结果就错了。多工作区时加 `--profile <name>`。退出码 0 才往下走；1 表示还有 ERROR，3 是文件或拉目录失败。
-
-它查的是 `workflow validate` 不一定能发现、但控制台会画错的地方：同一对节点出现两条边、边 `id` 不是 `{source}_{target}`、`relations` 不是数组或出口缺 `name` / `label`、出口名不在目录里、节点缺图标、图标和目录不一致、同类节点图标不同、图标写成 URL。`--fix` 会合并重复边、改正边 `id`、从目录补出口 `label` 和图标，不动 `description`；目录里没有的出口名不会自动猜，要按 `node-relations` 改。改完结构（合并了边）要重跑排版脚本。
-
-## 多段画布：分开生成再合并
-
-一段 = 从一个触发器出发、彼此有边相连的那一组节点。例如 `GET /orders` 和 `POST /refund` 各是一条 Webhook → 处理 → 应答，就是两段。
-
-| 怎么生成 | 何时 |
+| 命令 | 做什么 |
 |---|---|
-| 主代理一次写完 | 只有一段；或一段里的成功/失败分支、复制下游（分支不要拆给子任务）；或一共不超过 3 段、每段大约 8 个执行节点以内 |
-| 按段拆给子任务，再由主代理合并 | 段与段之间没有边，且超过 3 段，或有一段明显更长 |
+| `node $S/catalog.mjs fetch -b buildify/core -n A,B -b 包2 -n C [-V 版本] [--profile P]` | 并行拉 `bundle nodes` / `node-properties` / `node-relations` 存进 `/tmp/buildify-catalog`，打印摘要。没有 `-n` 只列包里的节点。`show` 只读缓存 |
+| `node $S/build.mjs spec.json -o flow.json [--base draft.json] [--fetch]` | 按 spec 生成画布：`n-` + nanoid、边 id、目录字段、表单默认值、整份出口对象、凭证、分组样式、多段原点、顶层 `direction` / `errors`，最后调 `layout.mjs`。参数键、出口名、凭证槽不对时 ERROR 且不写文件 |
+| `node $S/layout.mjs flow.json [--direction TB\|LR] [--group 分组id] [--check]` | 单独重排（build 已自动跑） |
+| `node $S/check.mjs flow.json --catalog-dir /tmp/buildify-catalog --fetch [--fix]` | 查边、出口、图标；按画布 `bundleVersion` 自动取版本一致的缓存，缺的再拉 |
+| `node $S/result.mjs validate\|test-run\|deploy 文件 [--flow flow.json]` | 整理 CLI 输出；`--write-errors` 写回顶层 `errors`；`--node` / `--path` 看某个节点的输出 |
 
-当前客户端没有子任务能力时，由主代理逐段生成，规则相同。
+退出码统一：0 通过；1 有 ERROR / 没通过（按输出修）；3 文件、参数或拉取失败。多工作区时 `catalog.mjs` / `build.mjs --fetch` / `check.mjs --fetch` 都加 `--profile`。
 
-拆开前，主代理先做完全画布共用的事：项目、流程、服务器、凭证定好（缺的才问），拉齐各节点的 `node-properties` / `node-relations`，定好 `direction`。然后为每一段准备：
+## 生成画布（步骤 6）
 
-- 一组预分配的 `n-` + nanoid（段内节点和要复制的下游都用这组）
-- 这段要用的节点 schema（`icon` / `label` / `uiComponent` / relations）
-- 用户已确认的凭证 `{type, name}`；选了「使用时再选」或没有槽位就不写 `credentials`
+**写 spec，不手写画布 JSON。** spec 只写业务内容（节点 `key` / `bundle` / `name` / `summary` / `parameters` / `credentials` / `parent`，边 `[from, to, 出口]`），格式见 `build.mjs` 文件头和 [recipes.md](reference/recipes.md)。改已有草稿用 `--base`（见 recipes「改已有流程」）。只有脚本表达不了的改动才手改 JSON，改完跑 `check.mjs --fix` 和 `layout.mjs`。
 
-每段交给一个 `generalPurpose` 子任务，只返回 `{ "nodes": [], "edges": [] }`：
+build 报的 WARNING 都要看：必填没填（含 Collection / Fixed 里的必填子字段，如 Webhook 的 `options.cors`）、JS 下游误用 `msg.output`、表达式写法、`summary` 超长、JS 没注释、凭证槽没绑。
 
-- 不算坐标，`position` 不写（主代理合并后统一排版）
-- 只用分配的 id，边只连本段节点
-- 不写顶层 `direction` / `errors` / `viewport`，不加批注和分组框
-- 不调用 save-draft / test-run / deploy，不改选项目或凭证
+下面是 spec 里仍要自己判断的规则：
 
-**只有主代理写 `flow.json`。** 合并时：拼上各段 `nodes` / `edges`，检查 id 不重复、边不跨段；顶层只写一份 `direction` 和 `errors`。按需求顺序给第 i 段（从 0 起）写粗略原点（`TB` 为 `{x: i*1000, y: 0}`，`LR` 为 `{x: 0, y: i*1000}`）：不分组时写在这段每个顶层节点上；流程复杂、按上文要分组时，由主代理加分组框（组内节点写该框的 `parentNode`），原点写在框上。脚本靠这个坐标决定段的先后。跑一次排版脚本，然后照常做步骤 7–10。段内层距、段间隙由脚本处理，不要手动平移。
+- **`summary`**：这颗节点在本流程里的职责，**≤8 字**（如「接收请求」「查询设备」），画布默认显示它，不要照抄目录 `summary`。
+- **参数**：只写要改的键，默认值脚本会从表单补。表达式按字段 `uiComponent` 选语法：`JsonExpressionInput` 默认整字段 `"={{msg.xxx}}"` 保留类型，要拼字符串才写 `"=前缀 {{msg.xxx}}"`；`SqlEditor` 用 `#{}` / `${}`；文本及其他用 `{{ }}`。见 [expressions.md](reference/expressions.md)。
+- **取值层级**：触发器字段在 `msg.xxx`；普通节点结果在 `msg.output.xxx`；**`JsFunctionNode` 的返回值就是下游的整个 `msg`**，取它返回的字段写 `msg.xxx`。
+- **JS 节点** `parameters.code` 分段并写中文注释：顶部写入参/出参，每段用 `// --- 段名 ---` 隔开。
+- **分支**：以不交叉为准。能沿流向干净汇合才共用下游；否则各支路复制一份配置相同的节点（spec 里另起一个 key）。不要复制触发器。至少 3 个旁支汇到同一个没有出边的收尾节点（如统一的失败返回）时保持共用，排版会把它放到尽头。
+- **出口**：一对节点只连一条边，多个出口接同一下游写 `["a","b","Success,Failure"]`。想让某个出口的分支在左 / 上，就把它的边写在前面。出口说明可以改写成本流程里的含义（`description`）。
+- **循环允许，但必须有出口。** 用户要重试、轮询、等到条件满足时，从下游出口连回上游入口即可，不要为了消环拆边或复制节点。环上至少要有一条边离开循环（If / Switch 的另一支、失败出口、次数用尽、超时等）。没有就补退出条件再保存，条件不清楚就问用户。
+- **默认不加批注，也不写接口文档。** 接口的方法、路径、访问地址写在对话汇报里。用户明确要求「写接口文档 / 加说明 / 加批注」时才在 spec 里加 `comment`，正文写法见 comment-node.md。
+- **默认不分组，特别复杂的流程按功能模块分组。** 执行节点大约 15 个以上，或一段里能清楚分出几块职责（如「接收校验」「下单扣款」「通知告警」）时，一个模块一个 `group`，组内节点写 `parent`。成功/失败分支跟着所在模块，不要为分支单独加框，也不要每个节点一个框。用户明确要求时照做，明确不要时不分。只改参数、不改结构时，不要为了补分组去重排已有画布。
+- **方向**：`direction` 默认 `TB`；用户要横排才 `LR`；改已有沿用草稿。
+
+改已有草稿时 build 会整图重排。只在增删了节点 / 边、或用户要求重排时用 build / layout，并告诉用户整张画布会按自动排列重排；用户手动调过布局时先问。只改参数就加 `--no-layout`。改动只在某个分组里时用 `layout.mjs --group <分组 id>`，组外坐标不动。
+
+### 多段画布
+
+一段 = 从一个触发器出发、彼此有边相连的那一组节点（如 `GET /orders` 和 `POST /refund` 两个独立接口）。build 按 spec 里的先后自动给每段写粗略原点，排版脚本据此并排，不用手算。
+
+段与段之间没有边、超过 3 段或有一段明显更长时，可以按段拆给 `generalPurpose` 子任务。主代理先定好项目、流程、服务器、凭证、方向并跑完 `catalog.mjs fetch`；每个子任务只返回本段的 spec 片段 `{ "nodes": [], "edges": [] }`（key 加段前缀避免重名，边只连本段，不加批注和分组，不调用 save-draft / test-run / deploy）。主代理合并成一份 spec 再跑 build。没有子任务能力时由主代理逐段写，规则相同。
 
 ## 环境里没有对应节点：先做 Bundle，再回来编排
 
-步骤 4 必须用 CLI 核实，**禁止**按名称或 recipes 臆造 `bundleName` / 节点 `name`。`bundle list -k` 换两三个同义词都查不到是**缺软件包**；包在但 `bundle nodes` 里没有是**缺节点**。缺节点时先看同包有没有 `…ApiCall` 通用调用节点，有就按厂商官方文档填参数直接用。
+步骤 4 必须用 CLI 核实，**禁止**按名称或 recipes 臆造 `bundleName` / 节点 `name`。`bundle list -k` 换两三个同义词都查不到是**缺软件包**；包在但 `catalog.mjs fetch -b 包` 列表里没有是**缺节点**。缺节点时先看同包有没有 `…ApiCall` 通用调用节点，有就按厂商官方文档填参数直接用。
 
-确实没有时**立刻停止**编 JSON / validate / 试跑 / 发布，按 [reference/missing-bundle.md](reference/missing-bundle.md) 走：
-
-1. **说明不存在，拟默认方案。** 节点、凭证、`…ApiCall` 通用节点按 buildify-bundle-dev 规范；接口按对接服务的官方开放文档实现并附链接（只认官方域名，找不到就请用户给文档）。缺软件包时一并拟好软件包信息（`命名空间/包名`、显示名、简介、可见性 `internal`）和图标（默认 `default.svg`）。
-2. **确认一次。** 用户已明确要求直接开发（如「没有就直接做」「按官方文档做」，或已给出包名和节点要求）时不再问，按默认值开发并在回复里列出默认值。否则一次点选：按默认方案创建并开发（推荐）/ 调整 / 改用相近节点 / 先停下，图标作第二题。**不要**让用户去控制台建软件包，建包由 bundle-dev 的发布 CLI 完成。
-3. **交给 bundle-dev。** 没装或版本旧（不支持 `bundle create`）就先装 / 更新。在「编排待续」里写明软件包信息和图标已由用户确认，bundle-dev 据此建命名空间和包、传图标、开发、发布，不再重复确认。
-4. **回到步骤 4。** 用 CLI 重新查目录，取真实的 `bundleVersion` / `icon` / 表单 / relations 后继续编排，汇报里加「新增 Bundle」。
+确实没有时**立刻停止**写 spec / validate / 试跑 / 发布，按 [reference/missing-bundle.md](reference/missing-bundle.md) 走：说明不存在并拟默认方案（buildify-bundle-dev 规范 + 官方文档，缺包时带软件包信息和图标）→ 确认一次（用户已要求直接做就不问）→ 交给 bundle-dev 建包、开发、发布 → 回到步骤 4 用 CLI 重新取真实的 `bundleVersion` / `icon` / 表单 / 出口，汇报里加「新增 Bundle」。不要让用户去控制台建软件包。
 
 ## 项目 / 流程 / 服务器 / 凭证：沿用已有，只问缺的
 
@@ -155,119 +114,34 @@ node <本 skill 目录>/scripts/check.mjs ./flow.json --catalog /tmp/buildify-ca
 |---|---|---|---|
 | **项目** | 这条流程所在的项目 | 用户点的项目 | `project list`，让他选 |
 | **流程** | 这一条，打开草稿改 | 用户给的名称 | 问新建还是改哪条；新建名没给时建议名放第一项 |
-| **服务器** | 用户点名的；没点名用 `workflow workers` 里 `deleteStatus` 为 0 的那台（已绑定）。不要用 `workflow published` 来选服务器 | 用户点的那台 | `project workers` 列出让他选 |
-| **凭证** | 草稿里该槽已写的 `{type, name}` | 用户点的那条 | 只问空槽 |
+| **服务器** | 用户点名的；没点名用 `workflow workers` 里 `deleteStatus` 为 0 的那台。不要用 `workflow published` 来选 | 用户点的那台 | `project workers` 列出让他选 |
+| **凭证** | 草稿里该槽已写的 `{type, name}` | 用户点的那条 | 只问空槽，见 [credentials.md](reference/credentials.md) |
 
 对用户只用名称；项目 id、workerId、hostname 留在内部。`-p` / `-w` 传 public id（`p-…` / `w-…`），不要传中文名称。
 
-**让用户定的项用点选，不要让他手打名称。** 能弹选择题时（如 Cursor 的 AskQuestion），缺的每一项一道题，放在同一次提问里；建议值放第一项，标签末尾写「推荐」；离线服务器可以列出，标签写「离线，不能试跑」。用户点完即采用，不要再让他复述。
+**查候选要一次查齐。** 项目还没定、又要在选项里标出每个项目的服务器或凭证时，在**一条** shell 命令里并行查（`&` + `wait`，输出各自落文件）`project workers -p … --online-only` 和 `project credentials -p … -b <所需包>`，不要逐个项目一轮一轮查。
+
+**让用户定的项用点选，不要让他手打名称。** 能弹选择题时（如 Cursor 的 AskQuestion），缺的每一项一道题，放在同一次提问里；建议值放第一项，标签末尾写「推荐」；离线服务器可以列出，标签写「离线，不能试跑」。用户点完即采用。没有选择题界面时，同一条消息里按项给编号，用户只回编号（如 `项目 1，服务器 2`）。
 
 一项都不用问时，不要为了画布方向或是否发布再弹一题，直接用默认：竖排、试跑通过后发布。正在问别的缺口时，把这两项也放进同一次提问。
-
-没有选择题界面时，同一条消息里给编号，用户只回编号（如 `项目 1，服务器 2`）：
-
-```markdown
-## 请选择
-
-直接点选。没点到的「推荐」项会直接采用。
-
-**项目**
-1. 测试项目 — 用于个人的测试使用
-2. 测试项目2 — 测试卷项目2
-
-**服务器**
-1. 本地java进程测试 — 测试专用 — 在线
-2. 火山测试服务器 — fsdf — 在线
-3. mac — 离线，不能试跑
-
-**流程**（推荐）
-1. 新建「当前时间 API」
-2. 改已有「订单查询」
-
-**画布**（推荐）
-1. 竖排
-2. 横排
-
-**试跑之后**（推荐）
-1. 发布
-2. 只保存草稿
-```
-
-规则：
 
 - 缺的时候不要自己挑第一条、唯一一条、或名称里带「本地/测试」的项。
 - 新建名没给时，按需求起一个短名（如「当前时间 API」）放进流程题第一项并标「推荐」。不要另起一轮只问名字，也不要用没展示过的名字直接 create。
 - 服务器：`workflow create --worker`、`test-run --worker`、`deploy --worker` 用同一台。离线的不能试跑或发布；用户点了离线的要说明并请改选在线的。
-- 改已有先 `workflow workers`。`deleteStatus` 0 是已绑定，才能 `deploy`；1 是待移除，不能拿来试跑或发布。只有一台已绑定且在线时直接用，多台再问。一台都没有时从 `project workers` 里选，用户点了之后先 `assign-workers`，再发布。`deploy` 报「未绑定」就是还没做这一步。
-- 改名、加/换/移除服务器、改或删凭证、删除项目或流程都不是默认步骤。用户提出来才做，先点选确认。细则见「改名称、改服务器、改凭证、删除」。
-- Webhook 路径等节点参数按表单写进 JSON，校验 ERROR 再按节点汇总一次问，不要为每个字段单独打断一轮。
-
-### 凭证
-
-只处理还空着的槽。节点表单没有 `CredentialSelect` 就说「不需要访问凭证」，不要绑。有槽时先 `project credentials` 列出该类型实例，每条已有实例一个选项，再加「现在创建」和「使用时再选」。**即使只有一条也要用户点它**；列表为空也不要自动创建。
-
-```markdown
-## 请选择访问凭证
-
-槽位 credentialsId · Mysql
-
-1. 使用已有「生产只读」
-2. 现在创建
-3. 使用时再选（保存草稿，稍后再在控制台选）
-```
-
-| 选项 | 做什么 |
-|---|---|
-| **使用已有** | 写 `data.credentials.<槽> = {type, name}`，`type` / `name` 必须能在 `project credentials` 里找到 |
-| **现在创建** | 按下面流程用 CLI 创建再绑上，不要让用户自己去控制台找入口 |
-| **使用时再选** | **不写** `data.credentials`。校验留下的该槽 ERROR 写入顶层 `errors` 后只 save-draft，说明用户在控制台打开流程时再选。不要试跑、不要发布，除非用户之后补上凭证再说试跑 |
-
-「现在创建」：
-
-1. 必须已确认项目（`-p` 必填）。
-2. `bundle cred-types` / `cred-properties` 取类型与表单；或直接跑 `buildify --json project create-credential -p … -b … --type …`（不传 name/label/data），用返回的 `data.userMessage` / `defaults` / `parameters`。
-3. 名称、显示名做成可改的默认，写进「将使用」；每个参数的中文名放进「请填写」（密钥类标明「密钥」）。密钥不能做成选项。
-4. 等用户确认。名称、显示名没改就用推荐值；参数没给齐不要创建。
-5. 用 stdin 创建，不要 `--data` 上命令行、不要把 JSON 落到仓库：
-   `printf '%s' '{"host":"…"}' | buildify --json project create-credential -p "$PROJ" -b "$BUNDLE" --type "$TYPE" --name "$NAME" --label "$LABEL" --file -`
-6. 成功后只用返回的 `label` / `name` / `type` 告诉用户已创建，并写入对应槽位。密钥不要出现在回复里。
-
-```markdown
-## 创建访问凭证
-
-名称和显示名不改就用「将使用」。请填写参数。
-
-### 将使用
-
-| 项 | 值 |
-| --- | --- |
-| 名称 | `mysql-prod` |
-| 显示名 | 生产库 |
-
-### 请填写
-
-| 参数 | 说明 |
-| --- | --- |
-| 主机 | |
-| 端口 | |
-| 密码 | 密钥 |
-```
+- 改已有先 `workflow workers`。只有一台已绑定且在线时直接用，多台再问。一台都没有时从 `project workers` 里选，用户点了之后先 `assign-workers`，再发布。`deploy` 报「未绑定」就是还没做这一步。
+- 节点参数（如 Webhook 路径）按表单写进 spec，校验 ERROR 再按节点汇总一次问，不要为每个字段单独打断一轮。
 
 ## 校验闭环（步骤 7）
 
-`workflow validate` 退出码 4 表示还有 ERROR。只看 `issues`（`level` / `nodeId` / `path` / `message`），不要把整份响应或画布再读一遍。按 `issues[].path` / `issues[].nodeId` 定位，对照 `node-properties` 修 `data.parameters`，重跑直到表单类 ERROR 清掉。不要跳过校验直接试跑。
+`check.mjs` 退出码 1 就按输出改（`--fix` 能合并重复边、补出口 label 和图标）。`workflow validate` 的输出落到文件，用 `result.mjs validate … --write-errors` 读：它只列 `issues`、按节点汇总表单 ERROR 写回顶层 `errors`（环不计入）。对照 `catalog.mjs` 摘要改 spec 重跑 build，或改 JSON，再校验，直到退出码 0。不要跳过校验直接试跑。
 
-**图里的环不算限制，但要核退出条件。** `issues` 里出现「环」/ cycle 时不要改边去消掉。出口连回上游入口是合法循环。只剩环导致 `valid: false` 时，先看环上有没有离开循环的边：有就照常 save-draft、试跑、发布；没有就补 If / Switch（或已有节点的另一出口）再问用户退出条件，不要带着死循环往下走。缺触发器、孤立节点、表单 ERROR 仍要修。
-
-每次校验后把表单 ERROR **写回画布顶层 `errors`**：全部通过 `"errors":{}`；未通过按节点 id 汇总，如 `"errors":{"n-k7mX2pL9":1}`（value 是该节点未通过字段数，不计 WARNING）。用户明确稍后自填或选了「使用时再选」时，也要写入当前汇总再 save-draft，不要为了消掉凭证 ERROR 去猜一条凭证。
-
-WARNING 不影响退出码，但也要修：`data.icon` 缺失、边上 `relations[]` 缺 `label`、自定义关系缺 `icon` / `_id`，都从 `bundle nodes` / `node-relations` 原样补齐，否则控制台图标和出口文字不对。图标用错、重复边这几类 validate 不一定能发现，靠 `scripts/check.mjs`（见「保存前检查边和图标」）。
+**环不算错误，但要核退出条件。** 只剩环时 `result.mjs` 退出 0 并提示核对：环上有离开循环的边就照常 save-draft、试跑、发布；没有就补 If / Switch（或已有节点的另一出口）再问用户退出条件。缺触发器、孤立节点、表单 ERROR 仍要修。WARNING（图标、出口 label、自定义出口 `icon` / `_id`）也要修。
 
 ## HTTP 接口
 
-入口用当前环境的 Webhook 触发器，目录名通常是 `WebhookTriggerNode`，以 `bundle nodes` 为准。
+入口用当前环境的 Webhook 触发器（通常是 `WebhookTriggerNode`，以目录为准）。它的 `options.cors` 是必填块，不开跨域也要写 `{"enabled": false, "allowedOrigins": "*", "allowedMethods": [与 methods 相同]}`。
 
-**认证先用这个触发器里已有的方式。** 对得上就写 `authType`，不要新做触发器，也不要在下游再验一遍。`node-properties` 里有「入站认证」时用它：
+**认证先用这个触发器里已有的方式。** 对得上就写 `authType`，不要新做触发器，也不要在下游再验一遍：
 
 | `authType` | 凭证槽 | 何时 |
 |---|---|---|
@@ -276,157 +150,53 @@ WARNING 不影响退出码，但也要修：`data.icon` 缺失、边上 `relatio
 | `apiKey` | `apiKey`（HeaderAuth） | 自定义 Header，含固定 Token、签名放在某个 Header 里但**不依赖原始报文体** |
 | `jwtAuth` | `jwtAuth`（JwtAuth） | `Authorization: Bearer` |
 
-按 IP 限制访问写这个触发器的高级选项 `options.acl`，不要再单做一段 IP 判断。开了认证后凭证槽仍按「凭证」三选一，不要自己挑一条。
+按 IP 限制访问写高级选项 `options.acl`，不要再单做一段 IP 判断。开了认证后凭证槽仍按三选一，不要自己挑一条。
 
-**对不上表里的方式，再另做处理。** 典型是微信支付、支付宝、Stripe 这类要按原始报文体计算签名的回调：`Content-Type: application/json` 时，`WebhookTriggerNode` 把 `request().body()` 解析成对象，原始字节回不来；表单体会收成字段。不要把这种验签写成 `apiKey` 或 `jwtAuth`，也不要在 `WebhookTriggerNode` 后面串一个验签节点。
+**对不上表里的方式，再另做处理。** 微信支付、支付宝、Stripe 这类要按原始报文体验签的回调，`WebhookTriggerNode` 拿不到原始字节，不要写成 `apiKey` / `jwtAuth`，也不要在后面串验签节点。先找这个渠道自己的回调触发器；没有就按「环境里没有对应节点」做一个**触发器**（要求见 missing-bundle.md「验签回调」）。选了「处理完再返回」时，Success 末端接核心包的 `WebhookResponseNode`。
 
-1. 先 `bundle list` / `bundle nodes` 找这个渠道自己的回调触发器。有就用它当入口。
-2. 没有就按「环境里没有对应节点」交给 bundle-dev，做这个渠道的**触发器**。它自己 `Route.create`，用 `request().body()` 读原始字符串，并在触发器里验签。验签失败按该渠道官方文档直接写回，不把请求送进流程。
-3. 返回要两种都支持，编排时按渠道文档选一种：
-   - **直接返回**：验签通过后立刻按文档要求的状态码、Content-Type 和正文写回，流程在后台继续。
-   - **处理完再返回**：先不结束连接，下游接核心包的 `WebhookResponseNode` 写回。触发消息的 eventId 用这次 HTTP 的 `getRequestId()`，`WebhookResponseNode` 靠消息头 `__correlationId` 找到这条连接。
-4. 编排时这个触发器就是入口，后面只接业务。选了处理完再返回时，Success 末端接 `WebhookResponseNode`。
+表单里没有 `authType`、需求也对不上上表、又不是原文验签时，才在触发器下游加一个真实存在的校验节点。不要把不存在的 `authType` 写进参数。
 
-表单里没有 `authType`、需求也对不上上表、又不是原文验签时，才在触发器下游加一个真实存在的校验节点；没有能校验的节点就按「环境里没有对应节点」处理。不要把不存在的 `authType` 写进参数。
-
-**接口文档默认不写进画布。** 方法、路径、是否认证和访问地址放在对话汇报里。用户明确要求写接口文档时，才加一张接口批注（见 [comment-node.md](reference/comment-node.md)），一个接口一张，有分组就挂在该接口的分组里。正文从「接口说明」起笔，方法、路径、是否认证、有则写请求头 / 参数 / 示例 / 错误码，最后写访问地址。访问地址（汇报和批注同一套）：生产 `http://{externalHost}:{httpPort}{path}`，测试在 path 前加 `/@test`。`externalHost` / `httpPort` 取已确认服务器在 `project workers` 里的字段；缺了就只写方法和 `parameters.path`，注明完整地址是「服务器访问地址 + 路径」，并提示到控制台「节点管理」设置。不要编造域名，不要把凭证密钥写进批注。
-
-### 试跑 HTTP 接口
-
-入口是 Webhook 触发器或渠道回调触发器时，步骤 9 按这个顺序做：
-
-1. **列出候选地址。** 取已确认服务器在 `project workers` 里的 `externalHost`、`httpPort`、`publicIp`（`test-run` 返回里若带访问地址，以它为准）。`externalHost` 可能自带 `http://` / `https://` 或端口：协议照它，带了端口就不再拼 `httpPort`；没写协议按 `http`。默认端口 `http` 是 **80**、`https` 是 **443**。按顺序列出，和前面重复的去掉：
-   1. `externalHost` + `httpPort`
-   2. `publicIp` 非空且和 `externalHost` 不是同一个主机时：`publicIp` + `httpPort`
-   3. 端口不是默认端口时：公网 IP（没有就用 `externalHost`）+ 默认端口
-
-   字段都没有时，候选为空，直接按第 3 步问用户。不要猜 `hostname`、`localhost`、内网 IP 或别的端口。
-2. **依次测通不通。** 只测连接，不调业务路径，每个候选一条命令，看完退出码再测下一个：
-
-   ```bash
-   curl -sS -o /dev/null -w '%{http_code}' --connect-timeout 5 --max-time 10 "$CANDIDATE/"
-   ```
-
-   退出码 0 就算通（404 / 401 等任何 HTTP 状态码都算）。6（域名解析失败）、7（连接被拒绝）、28（超时）、35 / 60（TLS）算不通。第一个通的就是这次的 `BASE`，后面的不再测。`BASE` 不是第一个候选时，汇报里写一句「控制台登记的地址不通，这次用的是公网 IP / 默认端口」，并提示到控制台「节点管理」改访问地址。
-3. **都不通、或没有候选，就停下问用户**，不要 `test-run`。写出测过的地址和各自的原因，再点选：
-
-   ```markdown
-   ## 服务器访问地址不通
-
-   火山测试服务器从本机连不上：
-
-   - `http://1.2.3.4:8080`：连接超时
-   - `http://5.6.7.8:8080`：连接被拒绝
-   - `http://5.6.7.8`：连接超时
-
-   请确认服务器在运行，且端口已在防火墙 / 安全组放行。如果这台机器要用别的地址访问（域名、内网穿透、代理、端口映射），直接把地址告诉我。
-
-   1. 我来填访问地址（选「其他」写上地址和端口）
-   2. 已处理，重新检测（推荐）
-   3. 换一台服务器
-   4. 先只保存草稿
-   ```
-
-   没有候选时，开头改成「控制台还没有这台服务器的访问地址」，不列测过的地址。「我来填」：用用户给的地址从第 2 步测一次，通了就用它当 `BASE`，并提示到「节点管理」把它登记上。「重新检测」：重新拉 `project workers`，从第 1 步再来。「换一台」：按「沿用已有，只问缺的」列出服务器；新服务器还没绑定（`workflow workers` 里没有 `deleteStatus` 0）时，确认后先 `assign-workers`，再继续试跑和发布。「只保存草稿」：停在步骤 8。
-4. **通了再试跑。** 后台启动 `test-run`，在它超时前向测试地址发一次请求，再等它返回：
-
-   ```bash
-   buildify --json workflow test-run -p "$PROJ" -f ./flow.json --worker "$WKR" --timeout 60 > /tmp/test-run.json &
-   sleep 3
-   curl -sS -X GET -w '\n%{http_code}' --max-time 30 "$BASE/@test/api/orders/123"
-   wait
-   ```
-
-   测试地址 = `BASE` + `/@test` + 触发器 `parameters.path`，方法与触发器一致；路径参数（如 `:id`）换成示例值，请求体按需求造一条最小样例。触发器开了入站认证时，不要猜密钥、不要从凭证里取明文：请用户提供，或请他自己调测试地址，再等 `test-run` 结果。
-5. 结合 `test-run` 的结果和这次 HTTP 响应判断是否符合需求，按 [report.md](reference/report.md)「试跑后」汇报。`test-run` 的输出已经落到文件，只取 `success`、`reason`，以及失败或结果不对的那几个节点的 `outputs` / `events`，不要把整份响应读进对话。
+访问地址、连通检测和试跑步骤见 [reference/http.md](reference/http.md)。
 
 ## 通知与失败告警
 
 - 失败告警的渠道以用户点名为准。没点名就问，选项是本流程已经在用的通知方式。不要把成功路径上的钉钉、飞书、邮件全部复制到失败分支；成功路径已有的通知不要因此删掉或改格式。
 - `HttpRequestNode` 走 Failure 时上游字段还在，另带 `msg.error`（`code`、`message`，有时有 `statusCode`）。用 JS 组装告警正文，把 `code` 和 `message` 写在一起（如 `HTTP_IO_ERROR：ConnectException`）。
-- 飞书卡片 `lark_md` 只稳定支持加粗、换行、链接，`###` 和行首 `- ` 会原样显示。钉钉和飞书正文分开组装，失败告警 header `template` 用 `red`。细则见 [expressions.md](reference/expressions.md)「飞书卡片与失败原因」。
+- 飞书卡片 `lark_md` 只稳定支持加粗、换行、链接。钉钉和飞书正文分开组装，失败告警 header `template` 用 `red`。见 [expressions.md](reference/expressions.md)「飞书卡片与失败原因」。
 - 要试跑失败出口时，另用一份**不保存**的画布把请求地址改成连不上的地址再 `test-run -f`，草稿里仍是原地址。
 
 ## 发布与汇报
 
-步骤 9 试跑成功（`data.success == true` 且 `reason` 不是 timeout）后才进入发布，发布到步骤 3 确认的那台服务器。草稿已在步骤 8 落库，**不要再传 flow.json**。
+试跑成功（`result.mjs test-run` 退出 0）后才进入发布，发布到步骤 3 确认的那台服务器。草稿已在步骤 8 落库，**不要再传 flow.json**。
 
-以下情况停在草稿，不问版本号、不 deploy：试跑失败或超时；用户说先不发布；确认时选了「只保存草稿」；凭证选了「使用时再选」。试跑后又改了 JSON，先 `save-draft` 再 deploy。
+以下情况停在草稿，不问版本号、不 deploy：试跑失败或超时；用户说先不发布；选了「只保存草稿」；凭证选了「使用时再选」。试跑后又改了 JSON，先 `save-draft` 再 deploy。
 
-**先点选确认版本元数据。** 版本号默认用确认当下的本地时间 `v` + `yyyyMMdd-HHmmss`；用户指定了就用他的，不要改成 `v1.0.0`，也不要省略让服务端另起一版。发布说明按本流程写一句。
-
-```markdown
-## 准备发布
-
-版本号 `v20261005-184620`，说明「首次上线 /test2 当前时间接口」。
-
-1. 按此发布（推荐）
-2. 发布，但不要说明
-3. 先不发布
-```
-
-要改版本号或说明时，用户选「其他」或在编号后写出新内容。未选择前不要 deploy。
+**先点选确认版本元数据。** 版本号默认用确认当下的本地时间 `v` + `yyyyMMdd-HHmmss`（`date '+v%Y%m%d-%H%M%S'`）；用户指定了就用他的，不要改成 `v1.0.0`，也不要省略。发布说明按本流程写一句。选项：按此发布（推荐）/ 发布，但不要说明 / 先不发布；要改版本号或说明时用户选「其他」写出来。未选择前不要 deploy。
 
 ```bash
 buildify --json workflow deploy -p "$PROJ" -w "$WF" --worker "$WKR" \
-  --version-name "v20261005-184620" --remark "首次上线 /test2 当前时间接口" --wait
+  --version-name "v20261005-184620" --remark "首次上线 /test2 当前时间接口" --wait > deploy.json
+node $S/result.mjs deploy deploy.json
 ```
 
-`--version-name` 和 `--remark` 只写到这个发布版本，不改流程描述。`--wait` 在 CLI 内轮询到结束，**不要**再循环调 `workflow deployment`，也不要接着拉 `workflow deployments`。返回的 `versionName` / `publishRemark` / `summary` 直接用来画表；失败时退出码 4，把 `summary.servers[].message` 原样告诉用户。`--worker` 必须已经是 `deleteStatus` 0 的绑定；报「未绑定」就先按「改名称、改服务器、改凭证、删除」加上再发。
+`--wait` 在 CLI 内轮询到结束，**不要**再调 `workflow deployment` / `deployments` / `published`。失败时把服务器的 `message` 原样告诉用户。
 
-### 汇报
+保存草稿、试跑、发布后都用 Markdown 表汇报，模板和状态符号见 [reference/report.md](reference/report.md)：服务器用表不用列表；表格单元格不放彩色 emoji；只写名称不写 id；不输出节点信息（HTTP 访问地址除外）。
 
-保存草稿、试跑、发布后都用 Markdown 表汇报，模板、状态符号映射和禁写项见 [reference/report.md](reference/report.md)。要点：服务器用表不用列表；表格单元格不放彩色 emoji；只写名称不写 id；不输出节点信息（HTTP 访问地址除外）。用户事后问部署记录或历史版本时，用同一份状态符号，见 report.md「事后查询」。
+## 改名称、改服务器、改凭证、删除、历史
 
-## 改名称、改服务器、改凭证、删除
-
-这些命令会改运行位置、凭证或删数据。用户没提出来就不要跑。能点选就点选，确认前不要执行。命令和 409 含义见 [reference/cli.md](reference/cli.md)。
-
-- **改名**：`project update` / `workflow update` 必传 `-n`。用户没说要改简介就不传 `--remark`，原简介会留下。
-- **加服务器**：`workflow assign-workers`，多台就重复 `--worker`。已经绑定的会跳过。流程还没发布时只是绑上，`needDeploy` 为 false。已经发布过时，会把**当前线上版本**部署到新服务器（`needDeploy: true`，带 `deploymentId`），不是把草稿发出去。告诉用户这一点。不要自己轮询；用户要看这次结果时再调一次 `workflow deployment -d`。响应里有 `warnings` 就原样说明。正在移除的服务器会 409，把 `msg` 告诉用户，等移除完成或改走强制移除。
-- **移除服务器**：`workflow unassign-workers`。没发布过的立刻解绑。已发布的变成待移除并下线，绑定还在，服务器确认前 `workflow delete` 会 409。
-- **强制移除**：只在用户说明服务器已经不在，或普通移除一直停在待移除时才用 `workflow force-unassign-workers`。它立刻删掉绑定，离线服务器下次同步时丢掉这个流程。
-- **删除**：`project delete` 只在项目里没有流程时能成功，否则 409。`workflow delete` 只在没有任何绑定（含待移除）时能成功，否则 409。要删流程就先移除服务器，待移除消不掉时再问要不要强制移除，然后才能删。
-- **改凭证**：`project update-credential -p … --credentials cred_…`，`credentialsId` 从 `project credentials` 取。只传用户要改的项（`--label` / `--description` / `--bundle-version`）；改表单时只把要改的字段用 stdin `--file -` 传，没传或空着的密钥保留原值。改表单会影响所有用它的流程，确认前先 `project credential-workflows` 把这些流程列给用户。密钥不要回显。
-- **删凭证**：先 `project credential-workflows` 看谁在用。有流程在用时删除会 409：告诉用户是哪些流程，问是先给它们换凭证还是不删，不要自己改那些流程。没人用时确认后 `project delete-credential`。
-- **凭证被哪些流程使用**：只读，直接 `project credential-workflows`，按流程名列表汇报，`hasNext` 为真且用户还要看时再翻页。
-
-## 部署记录与历史版本
-
-刚 `deploy --wait` 完不要查这两类。用户问过去的发布、哪一版在跑、或要看某一版画布时才查。
-
-- `workflow deployments`：部署记录，新的在前。翻页用 `--page`，默认一页 10 条，`hasNext` 为真且用户还要看时再取下一页。
-- `workflow versions`：历史版本，含当前草稿（`isDraft`）和仍绑在服务器上的版本（`isRunning`）。
-- `workflow get-version --version-id v-…`：那一版的 `workflowJson`。只读，没有 save-draft 用的乐观锁 `version`。用户要恢复成草稿时先确认，再把这份画布走正常的 validate / save-draft（锁版本仍由 save-draft 自己读当前草稿）。不要直接 deploy。
-- 退出码 2 且 `msg` 含「缺少权限」：密钥是有效的，缺的是消息里的 scope（部署记录要 `project:workflow:view_deployment`，历史版本要 `project:workflow:view_version`）。请用户到控制台给这把密钥补权限，不要当成密钥失效去重建。
+这些命令会改运行位置、凭证或删数据，用户没提出来就不要跑，确认前不要执行。部署记录、历史版本只在用户问过去的发布或某一版画布时才查。命令、409 含义和注意事项都在 [reference/cli.md](reference/cli.md)「改项目、改服务器、改凭证、删除」「部署记录与历史版本」。
 
 ## 工作区与密钥（步骤 1）
 
-执行 CLI，不要读它的源码。
-
-找不到 `buildify` 命令时由你装好，不要让用户去装：先试 `~/.local/bin/buildify`（可能只是不在 `PATH` 里），没有就按 [install.md](install.md)「装 buildify CLI」的顺序装（优先 `uv tool install -U buildify-cli`，Python 版本不够也能装）。不用 `sudo`，不改系统 Python。
+执行 CLI，不要读它的源码。找不到 `buildify` 命令时由你装好：先试 `~/.local/bin/buildify`，没有就按 [install.md](install.md)「装 buildify CLI」装（优先 `uv tool install -U buildify-cli`）。不用 `sudo`，不改系统 Python。
 
 `buildify --json key test`：
 
 - 退出码 0：用返回的工作区。只有一把密钥时不必加 `--profile`。
-- `data.reason=missing_api_key`：**停止编排**，请用户到控制台 **系统设置 → API Keys → buildify-cli 密钥** 创建一把并发来完整的 `keyId.secret`（只在创建时显示一次；有多个工作区时在要编排的那个里创建）。说明照 [install.md](install.md)「buildify-cli 密钥」里的模板写，不要原样转发 `data.userMessage`，里面的菜单路径可能是旧的。profile 名不必问，用工作区的简短英文名，没有就用 `default`。收到后：
-
-  ```bash
-  printf '%s' "$KEY" | buildify config add-profile "$PROFILE"
-  buildify --json key test
-  ```
-
-- `data.reason=profile_required`：**停止**，每个 profile 一个选项（名称、tenantId、密钥名，不含密钥），点一次。之后每条命令加 `--profile <name>`。不要 `config use`，除非用户明确要改默认工作区。
-
-  ```markdown
-  ## 请选择工作区
-
-  1. acme — t-xxxx — 开放 API
-  2. beta — t-yyyy — 另一把密钥
-  ```
-
-- `data.reason=workspace_key_missing`：仓库 `.buildify-workspace` 指向的工作区本机没有密钥。请用户在这个工作区的 **系统设置 → API Keys → buildify-cli 密钥** 创建一把发来，再 `add-profile`，不要改用别的工作区。
-- 项目 404 且响应带 `tenantId` / `profile`：先问是不是工作区错了，再决定要不要在这里建项目。密钥不在允许的项目范围内时，项目也会 404。
-- 退出码 2 且 `msg` 含「缺少权限」：密钥有效，缺的是消息里的 scope。请用户在控制台给这把密钥补上，不要当成 401 去重建密钥。
+- `data.reason=missing_api_key`：**停止编排**，按 [install.md](install.md)「buildify-cli 密钥」的模板请用户到 **系统设置 → API Keys → buildify-cli 密钥** 创建并发来 `keyId.secret`，不要原样转发 `data.userMessage`。profile 名用工作区的简短英文名，没有就用 `default`。收到后 `printf '%s' "$KEY" | buildify config add-profile "$PROFILE"` 再 `key test`。
+- `data.reason=profile_required`：**停止**，每个 profile 一个选项（名称、tenantId、密钥名），点一次。之后每条命令加 `--profile <name>`。不要 `config use`，除非用户明确要改默认工作区。
+- `data.reason=workspace_key_missing`：请用户在 `.buildify-workspace` 指向的那个工作区创建密钥发来，不要改用别的工作区。
+- 项目 404 且响应带 `tenantId` / `profile`：先问是不是工作区错了。退出码 2 且 `msg` 含「缺少权限」：密钥有效，请用户补上消息里的 scope，不要重建密钥。
 
 **密钥安全：** 不要 `--api-key`；不要写进仓库、`.env` 或 commit；不要在回复里回显明文。本 CLI 不能创建密钥。

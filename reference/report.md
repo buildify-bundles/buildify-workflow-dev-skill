@@ -1,6 +1,6 @@
 # 汇报格式：保存、试跑、发布
 
-字段一律取**这一次**命令的返回，不要为了填表再请求。刚 `deploy --wait` 完不要调 `workflow published`，也不要拉 `workflow deployments`；用户事后问线上版本时才用 `published` 画同一套表。问过去的发布或历史版本时见「事后查询」。
+字段一律取**这一次**命令的返回，不要为了填表再请求。发布表直接用 `scripts/result.mjs deploy deploy.json` 打印的版本号、说明、总体状态和服务器行。刚 `deploy --wait` 完不要调 `workflow published`，也不要拉 `workflow deployments`；用户事后问线上版本时才用 `published` 画同一套表。问过去的发布或历史版本时见「事后查询」。
 
 ## 通用规则
 
@@ -23,7 +23,7 @@
 
 ## 试跑后
 
-标题写「试跑通过」或「试跑未通过」，「结果」写一句结论，不贴节点输出。HTTP 接口加「测试地址」（带 `/@test`，用实际测通的地址）和「HTTP 状态」两行；候选地址都不通时不出这张表，改用 SKILL「试跑 HTTP 接口」第 3 步的提示。
+标题写「试跑通过」或「试跑未通过」，「结果」写一句结论，不贴节点输出。HTTP 接口加「测试地址」（带 `/@test`，用实际测通的地址）和「HTTP 状态」两行；候选地址都不通时不出这张表，改用 [http.md](http.md)「试跑 HTTP 接口」第 3 步的提示。「结果」和失败节点从 `scripts/result.mjs test-run` 的摘要里取。
 
 ```markdown
 ## 试跑通过

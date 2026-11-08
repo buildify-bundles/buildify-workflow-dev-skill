@@ -91,7 +91,9 @@ mkdir -p "$DEST" && curl -fsSL --max-time 60 \
 BASE=https://gitee.com/buildify/buildify-workflow-dev-skill/raw/main
 for f in SKILL.md README.md install.md reference/cli.md reference/flow-json.md reference/expressions.md \
          reference/recipes.md reference/comment-node.md reference/report.md reference/missing-bundle.md \
-         scripts/layout.mjs scripts/check.mjs scripts/vendor/dagre.min.js scripts/vendor/dagre.LICENSE; do
+         reference/layout-manual.md reference/credentials.md reference/http.md \
+         scripts/layout.mjs scripts/check.mjs scripts/catalog.mjs scripts/build.mjs scripts/result.mjs \
+         scripts/lib/catalog-store.mjs scripts/vendor/dagre.min.js scripts/vendor/dagre.LICENSE; do
   mkdir -p "$DEST/$(dirname "$f")" && curl -fsSL --max-time 60 "$BASE/$f" -o "$DEST/$f" || echo "下载失败 $f"
 done
 ```
@@ -104,7 +106,9 @@ done
 grep -E '^name: buildify-workflow-dev$' "$DEST/SKILL.md"
 for f in reference/cli.md reference/flow-json.md reference/expressions.md reference/recipes.md \
          reference/comment-node.md reference/report.md reference/missing-bundle.md \
-         scripts/layout.mjs scripts/check.mjs scripts/vendor/dagre.min.js; do test -f "$DEST/$f" || echo "缺少 $f"; done
+         reference/layout-manual.md reference/credentials.md reference/http.md \
+         scripts/layout.mjs scripts/check.mjs scripts/catalog.mjs scripts/build.mjs scripts/result.mjs \
+         scripts/lib/catalog-store.mjs scripts/vendor/dagre.min.js; do test -f "$DEST/$f" || echo "缺少 $f"; done
 ```
 
 有缺失就换另一个来源重取一次；还缺就把路径和 `ls` 结果告诉用户，不要假装成功。
@@ -160,7 +164,7 @@ buildify --json key test
 
 ## 6. 可选项：只检查，不安装
 
-- `node --version` ≥ 18：排版和检查脚本可用（不用 `npm install`），用 `node "$DEST/scripts/layout.mjs" --help` 确认。没有或版本太低时不要装 Node，只在汇报里说：编排时改用手算坐标、人工核对边和图标。
+- `node --version` ≥ 18：目录、生成画布、排版和检查脚本可用（不用 `npm install`），用 `bash "$DEST/scripts/smoke.sh"` 确认（离线，最后一行是「smoke: 全部通过」；逐个文件下载的副本没有 smoke.sh，改用 `node "$DEST/scripts/build.mjs" --help`）。没有或版本太低时不要装 Node，只在汇报里说：编排时改用手算坐标、人工核对边和图标。
 - 同一 skills 根目录下有没有 `buildify-bundle-dev/SKILL.md`。没有不用现在装：编排时缺软件包或节点，用户确认默认方案后再按 <https://buildify.cn/buildify-bundle-dev/install.md> 安装（旧版不支持建包时原地更新），由它建包、开发和发布。
 
 ## 7. 汇报

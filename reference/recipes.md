@@ -1,227 +1,150 @@
-# 编排骨架
+# 编排骨架（spec）
 
-下面是形状示例，**节点 `name` / `bundleName` / `bundleVersion` / relation / 参数键必须用 CLI 向当前环境核实**：
-
-```bash
-buildify --json bundle list
-buildify --json bundle nodes -b official/core
-buildify --json bundle node-properties -b official/core -n WebhookTriggerNode
-buildify --json bundle node-relations  -b official/core -n WebhookTriggerNode
-```
-
-照抄骨架前替换这些占位：
-
-- `official/core`、节点名、`REPLACE_ME` 版本：换成 `bundle list` / `bundle nodes` **实际返回**的值。环境里根本没有能覆盖需求的包时，不要用骨架硬编，按 [missing-bundle.md](missing-bundle.md) 给默认方案、确认后由 bundle-dev 建包开发发布，然后回来编排。
-- `icon: COPY_FROM_BUNDLE_NODES`：换成目录返回的 `icon`（如 `webhook.svg`）。
-- `trigger` / `work` / `reply` 这类 id：换成 `n-` + nanoid。
-- 骨架默认 `TB`；横排时改 `"direction": "LR"`。
-- 骨架里的 `position` / `sourcePosition` / `targetPosition` 只是示例值，以排版脚本的输出为准。
-- 骨架不带分组和批注，默认也不要加：批注（含接口文档）只在用户要求时写，分组只给特别复杂的流程按功能模块加（见「5. 节点分组」）。
-
-**先连线，最后统一排版**：写好节点和边（坐标可以不写），再跑一次脚本，然后进入校验：
+下面是 `scripts/build.mjs` 的 spec 示例。**节点 `bundle` / `name`、参数键和出口名必须是当前环境 `catalog.mjs fetch` 实际返回的**，build 会对照目录核对，对不上就报 ERROR。环境里根本没有能覆盖需求的包时，不要用骨架硬编，按 [missing-bundle.md](missing-bundle.md) 处理。
 
 ```bash
-node <skill 目录>/scripts/layout.mjs ./flow.json      # 写回坐标、锚点、分组尺寸
-node <skill 目录>/scripts/check.mjs ./flow.json --fetch --fix   # 边、出口 name / label、图标对照目录
-buildify --json workflow validate -p "$PROJ" -f ./flow.json
+S=<skill 目录>/scripts
+node $S/catalog.mjs fetch -b buildify/core -n SchedulerNode,HttpRequestNode,JsFunctionNode -b buildify/dingtalk-bot -n SendMarkdownMsgNode
+node $S/build.mjs spec.json -o flow.json
+node $S/check.mjs flow.json --catalog-dir /tmp/buildify-catalog --fetch
 ```
 
-字段、排版、边的规则见 [flow-json.md](flow-json.md)，表达式见 [expressions.md](expressions.md)。不要把 Webhook 响应当成一个叫 `body` 的字段。
+spec 规则：
 
-## 1. Webhook 触发 → 处理 → 应答
+- 节点：`key`（spec 内引用）、`bundle`（可写 `包名@版本`）、`name`、`summary`（≤8 字）、`parameters`（只写要改的键，默认值脚本补）、`credentials`、`parent`（分组 key）、`disabled`。
+- 边：`["from", "to"]` 默认出口 `Success`；`["from", "to", "Failure"]`；多个出口接同一下游写 `"Success,Failure"`；要改出口说明用对象 `{ "from", "to", "out", "description": { "Failure": "…" } }`。
+- 分组框 `{ "key", "group": "模块名" }`；批注 `{ "key", "comment": "正文", "width": 480 }`（只在用户要求时加）。
+- 不写 id、坐标、图标、label、出口对象、分组样式，脚本都会补。
 
-典型链路：入站 Webhook → JS/HTTP 处理 → Webhook 响应。认证先用 `WebhookTriggerNode` 已有的 `authType`。只有按原文验签、对不上这些方式时才不用它，见 SKILL「HTTP 接口」。
+## 1. 定时 → 拉取 → 推送，失败告警
+
+```json
+{
+  "direction": "TB",
+  "nodes": [
+    { "key": "cron", "bundle": "buildify/core", "name": "SchedulerNode", "summary": "每天8点",
+      "parameters": { "zoneId": "Asia/Shanghai", "triggerType": "daily", "triggerHours": 8, "triggerMinutes": 0 } },
+    { "key": "http", "bundle": "buildify/core", "name": "HttpRequestNode", "summary": "拉取预报",
+      "parameters": { "url": "https://api.open-meteo.com/v1/forecast?latitude=39.90&longitude=116.41&daily=weather_code" } },
+    { "key": "fmt", "bundle": "buildify/core", "name": "JsFunctionNode", "summary": "组装日报",
+      "parameters": { "code": "// 组装钉钉日报\n// 入参：msg.output.body.daily；出参：{ title, text }\n\n// --- 1. 返回下游 ---\nreturn { title: '北京天气', text: JSON.stringify(msg.output.body.daily) };" } },
+    { "key": "send", "bundle": "buildify/dingtalk-bot", "name": "SendMarkdownMsgNode", "summary": "发送日报",
+      "parameters": { "title": "={{msg.title}}", "text": "={{msg.text}}" },
+      "credentials": { "credentialsId": { "type": "DingTalkBotCredentials", "name": "用户点选的实例名" } } },
+    { "key": "alarm", "bundle": "buildify/core", "name": "JsFunctionNode", "summary": "组装告警",
+      "parameters": { "code": "// 接口失败时拼告警\n// 入参：msg.error；出参：{ title, text }\n\n// --- 1. 返回下游 ---\nreturn { title: '天气接口失败', text: msg.error.code + '：' + msg.error.message };" } },
+    { "key": "send-alarm", "bundle": "buildify/dingtalk-bot", "name": "SendMarkdownMsgNode", "summary": "失败通知",
+      "parameters": { "title": "={{msg.title}}", "text": "={{msg.text}}" },
+      "credentials": { "credentialsId": { "type": "DingTalkBotCredentials", "name": "用户点选的实例名" } } }
+  ],
+  "edges": [
+    ["cron", "http"],
+    ["http", "fmt"],
+    ["fmt", "send"],
+    { "from": "http", "to": "alarm", "out": "Failure", "description": { "Failure": "天气接口失败时告警" } },
+    ["alarm", "send-alarm"]
+  ]
+}
+```
+
+- HTTP 节点的结果在 `msg.output`（`statusCode` / `headers` / `body`）。JS 节点的返回值就是下游的整个 `msg`，所以钉钉节点写 `={{msg.title}}`。
+- 失败分支的渠道以用户点名为准，见 SKILL「通知与失败告警」。凭证 `name` 必须是用户从 `project credentials` 点选的，不要因为只有一条就默认写上。
+- 写入数据库的节点（如 MySQL）`SqlEditor` 字段用 `#{msg.xxx}`（值）和 `${msg.xxx}`（表名 / 列名），不要写 `{{ }}` 或 `=` 前缀，见 [expressions.md](expressions.md)。
+
+## 2. Webhook → 处理 → 应答
 
 ```json
 {
   "nodes": [
-    {
-      "id": "trigger",
-      "type": "default",
-      "position": { "x": 45, "y": 24 },
-      "sourcePosition": "bottom",
-      "targetPosition": "top",
-      "data": {
-        "name": "WebhookTriggerNode",
-        "label": "Webhook",
-        "summary": "接收请求",
-        "icon": "COPY_FROM_BUNDLE_NODES",
-        "bundleName": "official/core",
-        "bundleVersion": "REPLACE_ME",
-        "isTrigger": true,
-        "parameters": {}
-      }
-    },
-    {
-      "id": "work",
-      "type": "default",
-      "position": { "x": 45, "y": 161 },
-      "sourcePosition": "bottom",
-      "targetPosition": "top",
-      "data": {
-        "name": "JsFunctionNode",
-        "label": "JavaScript",
-        "summary": "回显请求",
-        "icon": "COPY_FROM_BUNDLE_NODES",
-        "bundleName": "official/core",
-        "bundleVersion": "REPLACE_ME",
-        "parameters": {
-          "code": "// 回显入站 Webhook，供下游应答使用\n// 入参：msg（触发器字段在根级）；出参：{ echo }\n\n// --- 1. 取入参 ---\nconst payload = msg; // 原样带回，方便对照请求\n\n// --- 2. 返回下游 ---\nreturn {\n  echo: payload\n};"
-        }
-      }
-    },
-    {
-      "id": "reply",
-      "type": "default",
-      "position": { "x": 45, "y": 298 },
-      "sourcePosition": "bottom",
-      "targetPosition": "top",
-      "data": {
-        "name": "WebhookResponseNode",
-        "label": "Webhook 响应",
-        "summary": "返回结果",
-        "icon": "COPY_FROM_BUNDLE_NODES",
-        "bundleName": "official/core",
-        "bundleVersion": "REPLACE_ME",
-        "parameters": {
-          "responseType": "custom",
-          "outputType": "json",
-          "jsonValue": "={{msg.output}}",
-          "options": { "responseStatusCode": 200 }
-        }
-      }
-    }
+    { "key": "hook", "bundle": "buildify/core", "name": "WebhookTriggerNode", "summary": "接收请求",
+      "parameters": { "path": "/orders/:id", "methods": ["GET"],
+        "options": { "cors": { "enabled": false, "allowedOrigins": "*", "allowedMethods": ["GET"] } } } },
+    { "key": "work", "bundle": "buildify/core", "name": "JsFunctionNode", "summary": "查询订单",
+      "parameters": { "code": "// 按路径参数组装返回\n// 入参：msg（触发器字段在根级）；出参：{ code, data }\n\n// --- 1. 返回下游 ---\nreturn { code: 200, data: msg };" } },
+    { "key": "reply", "bundle": "buildify/core", "name": "WebhookResponseNode", "summary": "返回结果",
+      "parameters": { "responseType": "custom", "outputType": "json", "jsonValue": "={{msg}}" } }
   ],
-  "edges": [
-    {
-      "id": "trigger_work",
-      "source": "trigger",
-      "target": "work",
-      "data": { "relations": [{ "name": "Success", "label": "成功", "description": "节点执行成功，消息路由到此链路" }] }
-    },
-    {
-      "id": "work_reply",
-      "source": "work",
-      "target": "reply",
-      "data": { "relations": [{ "name": "Success", "label": "成功", "description": "节点执行成功，消息路由到此链路" }] }
-    }
-  ],
-  "direction": "TB",
-  "errors": {}
+  "edges": [["hook", "work"], ["work", "reply"]]
 }
 ```
 
-处理节点如果声明了凭证槽，先 `project credentials` 列出该类型，每个槽位请用户三选一：**使用已有** / **现在创建** / **使用时再选**。即使只有一条也不要直接写进 JSON。选了「使用已有」后再写：
+- `options.cors` 是必填块，不开跨域也要写，`allowedMethods` 与 `methods` 一致。
+- 认证先用触发器的 `authType`（见 SKILL「HTTP 接口」），开了认证再按凭证三选一绑对应的槽（`httpBasicAuth` / `apiKey` / `jwtAuth`）。
+- `jsonValue` 是 `JsonExpressionInput`：整字段 `"={{msg.xxx}}"` 保留类型，要拼字符串才写 `"=[{{msg.type}}] {{msg.title}}"`。改成纯文本响应（`outputType: text`，字段 `textValue`）时变量写 `{{msg.title}}`。
+- 试跑前先测访问地址，见 [http.md](http.md)。
 
-```json
-"credentials": {
-  "credentialsId": { "type": "HttpBasicAuth", "name": "用户选定的实例名" }
-}
-```
-
-`type` / `name` 必须能在 `buildify project credentials -p <proj>` 里找到。选了「使用时再选」则不写该槽，见 SKILL「凭证」。
-
-`jsonValue` 是 `JsonExpressionInput`：默认整字段 `"={{msg.output}}"`，对象原样注入、类型保留。要拼成字符串才写 `"=[{{msg.output.type}}] {{msg.output.title}}"`。`=` 必须是引号内第一个字符，不要写成 `"this is ={{msg.title}}"`，花括号里不要空格。若改成纯文本响应（`outputType: text`，字段 `textValue`），变量写成 `{{msg.output.title}}`，不要套 JSON 的 `=` 前缀。
-
-## 2. 定时 → 拉取 → 落库
-
-```
-ScheduleTrigger → HttpRequestNode → 写入节点（以实际 bundle 为准）
-```
-
-1. `bundle nodes` 找到定时触发器，确认 `isTrigger`；`label` 拷目录类型名
-2. 每个节点写短 `summary`（≤8 字，画布默认显示），如「每小时触发」「拉取列表」「写入 MySQL」
-3. HTTP 节点的 URL / method 以 `node-properties` 为准，不要抄本文件的字段名。URL 等文本字段用 `{{msg.xxx}}`；请求体若是 `JsonExpressionInput`，默认 `"={{msg.output}}"` 保留类型，要拼成字符串才 `"=前缀 {{msg.xxx}}"`
-4. 写入节点几乎一定要凭证：先 `project credentials` 列出名称，请用户选 **使用已有** / **现在创建** / **使用时再选**；不要猜实例名，也不要因为只有一条就默认绑定
-5. `SqlEditor` 字段用 `#{msg.xxx}`（值）和 `${msg.xxx}`（表名/列名），**不要**写 `{{ }}` 或给 SQL 加 `=` 前缀：
-
-```sql
-SELECT * FROM ${msg.output.table}
-WHERE id = #{msg.output.id}
-```
-
-坐标交给排版脚本，见 [flow-json.md](flow-json.md)「画布排列」。
-
-## 3. 分支：必要时复制节点
-
-成功/失败接到**同一个**下游时，用**一条边**把两个 relation 都放进 `data.relations`（不要拆边）：
+## 3. 条件分支：必要时复制节点
 
 ```json
 {
-  "id": "n-k1V6QF1P_n-8aunB6B4",
-  "type": "default",
-  "source": "n-k1V6QF1P",
-  "target": "n-8aunB6B4",
-  "data": {
-    "relations": [
-      {
-        "name": "Failure",
-        "label": "失败",
-        "description": "节点执行失败，消息路由到此链路"
-      },
-      {
-        "name": "Success",
-        "label": "成功",
-        "description": "节点执行成功，消息路由到此链路"
-      }
-    ]
-  },
-  "label": "",
-  "zIndex": 2000
+  "nodes": [
+    { "key": "hook", "bundle": "buildify/core", "name": "WebhookTriggerNode", "summary": "接收请求",
+      "parameters": { "path": "/check", "methods": ["POST"],
+        "options": { "cors": { "enabled": false, "allowedOrigins": "*", "allowedMethods": ["POST"] } } } },
+    { "key": "if", "bundle": "buildify/core", "name": "IfNode", "summary": "金额超限",
+      "parameters": { "type": "expression", "expression": "msg.body.amount > 1000" } },
+    { "key": "ok", "bundle": "buildify/core", "name": "WebhookResponseNode", "summary": "通过返回",
+      "parameters": { "responseType": "custom", "outputType": "json", "jsonValue": { "pass": true } } },
+    { "key": "no", "bundle": "buildify/core", "name": "WebhookResponseNode", "summary": "拒绝返回",
+      "parameters": { "responseType": "custom", "outputType": "json", "jsonValue": { "pass": false } } }
+  ],
+  "edges": [["hook", "if"], ["if", "no", "True"], ["if", "ok", "False,Failure"]]
 }
 ```
 
-成功/失败（或多出口）各自还要做同一件事、且接到**不同**下游时，**不要**把两边绕到同一个节点上交叉。每条支路复制一份相同配置的节点，沿主方向继续排；每条边的 `relations` 只含该支路的出口。
-
-排版脚本跑完的样子如下（手算兜底时也按这个写）。`TB` 竖排（判断在 y=24，下一层净空 120，兄弟净空 50；返回是出度 1，再走净空 74）：
-
-```
-                 [判断]  x=194 y=24
-                /                    \
-   [处理A] x=45 y=207       [处理B] x=343 y=207
-   [返回]  x=45 y=344       [返回]  x=343 y=344     ← 同一 Webhook 响应配置，两个 id
-```
-
-`LR` 横排（判断在 x=45，下一列净空 140，兄弟净空 72）：
-
-```
-[判断] x=45 y=91.5
-   |                    \
-[处理A] x=433 y=24    [处理B] x=433 y=159
-[返回]  x=821 y=24    [返回]  x=821 y=159     ← 同一配置，两个 id
-```
-
-- 两份「返回」：`data.name` / `parameters` / `credentials` 相同，**各抽一个新 `n-` + nanoid** 作 `id`；`summary` 可写成「成功返回」「失败返回」
-- 边只沿本列/本行走，不要斜穿到对面；每条边 `id`=`{source}_{target}`，`relations` 只含该支路出口
-- 支路沿流向正前方能干净接到同一个节点、边不穿过别人时，仍共用：一条边，`relations` 里同时放 Success 和 Failure
-- 不要复制触发器
+- IfNode 的出口是 `True` / `False` / `Failure`（label「是」/「否」/「失败」），`BooleanExpressionInput` 直接写 SpEL，不要 `{{ }}` 和 `=` 前缀。
+- 两条支路都要应答时各放一个 `WebhookResponseNode`（两个 key），不要把两边绕到同一个节点上交叉。支路沿流向正前方能干净接到同一个节点时才共用，一条边里同时放多个出口。
+- 想让某个出口的分支在左（`TB`）或上（`LR`），就把它的边写在前面。
 
 ## 4. 改已有流程
 
-改已有时服务器用 `workflow workers` 里 `deleteStatus` 为 0 的那台，不要用 `workflow published` 来选。用户要看某一历史版本的画布时用 `workflow get-version`，确认恢复后再把那份 `workflowJson` 走下面的校验和 save-draft。
-
 ```bash
 buildify --json workflow get-draft -p "$PROJ" -w "$WF" > draft.json
-# 取出 data.workflowJson 作为画布 flow.json，改完后：
-node <skill 目录>/scripts/layout.mjs ./flow.json   # 只在增删了节点/边或用户要求重排时
-# 只动了某个分组里的节点：node <skill 目录>/scripts/layout.mjs ./flow.json --group <分组 id>
-node <skill 目录>/scripts/check.mjs ./flow.json --fetch --fix
-buildify --json workflow validate -p "$PROJ" -f ./flow.json
-buildify --json workflow save-draft -p "$PROJ" -w "$WF" -f ./flow.json
+node $S/build.mjs edit.json --base draft.json -o flow.json --fetch      # 只改参数时加 --no-layout
+node $S/check.mjs flow.json --catalog-dir /tmp/buildify-catalog --fetch
+buildify --json workflow validate -p "$PROJ" -f flow.json > validate.json
+node $S/result.mjs validate validate.json --flow flow.json --write-errors
+buildify --json workflow save-draft -p "$PROJ" -w "$WF" -f flow.json
 ```
-
-不要从空模板覆盖已有草稿，除非用户明确要求重写。改节点职责时同步改 `data.summary`（仍 ≤8 字）。沿用草稿的 `direction`。排版脚本会按自动排列重排整张画布，所以只在增删了节点 / 边、或用户要求重排 / 改方向（`--direction`）时跑，并告诉用户；用户手动调过布局时先问。只改参数不要跑。
-
-## 5. 节点分组
-
-默认不分组。流程特别复杂（执行节点大约 15 个以上，或一段里能清楚分出几块职责）时，按功能模块分组：一个模块一个框，模块可以是一段里连续的一截（如「接收校验」「下单扣款」「通知告警」），也可以是一整段独立接口；分支跟着所在模块，不要再加框。只写分组框的基础字段和组内节点的 `parentNode`，模块之间照常连边，框的位置、宽高和组内坐标交给排版脚本。不要顺手给每个框加说明批注，用户要求时才加（见 [comment-node.md](comment-node.md)）。字段形状见 [flow-json.md](flow-json.md)「节点分组」，不要在这里另抄一份。
-
-几个独立接口各成一个模块时，第 i 段的框写粗略原点 `TB` `{x: i*1000, y: 0}`（`LR` `{x: 0, y: i*1000}`），子节点不写坐标，跑完脚本即可。同一段里分模块时框都写 `{0, 0}`，先后由边决定：
 
 ```json
-{ "id": "n-Gq3aT9xK", "type": "group", "position": { "x": 1000, "y": 0 },
-  "data": { "name": "GroupNode", "label": "group", "summary": "查询", "isLayoutNode": true,
-            "parameters": { "groupLabel": "查询", "groupColor": "#4a535c", "groupOpacity": 0.03,
-                            "groupRadius": 12, "groupBorderStyle": "solid", "groupBorderWidth": 1.5,
-                            "groupBorderColor": "#4a535c" } } }
+{
+  "nodes": [
+    { "id": "n-qvsX4Sqs", "summary": "拉取预报", "parameters": { "timeout": 20 } },
+    { "key": "wait", "bundle": "buildify/core", "name": "WaitNode", "summary": "稍等" }
+  ],
+  "edges": [["n-SxlNqYfG", "wait"], ["wait", "n-3gxcv7wx"]],
+  "remove": ["n-SxlNqYfG_n-3gxcv7wx"]
+}
 ```
+
+- `{ "id": 旧 id, … }` 不写 `name` 表示改这个节点：`parameters` 按键合并，`summary` / `credentials` / `parent` 覆盖。旧 id 不会变。
+- 边两端可以写新节点的 key，也可以写旧节点 id。`remove` 写旧节点 id（连同它的边一起删）或旧边 id。上面就是在两个节点之间插入一个节点。
+- `--base` 直接吃 `get-draft` 的整份响应。`--fetch` 会补拉草稿里已有节点的目录。
+- 不要从空 spec 覆盖已有草稿，除非用户明确要求重写。改节点职责时同步改 `summary`。沿用草稿的 `direction`；build 会整图重排，只改参数时加 `--no-layout`；用户手动调过布局时先问。
+- 用户要看某一历史版本时用 `workflow get-version`，确认恢复后把那份 `workflowJson` 当 `--base` 走同样的流程。
+
+## 5. 分组与多段
+
+默认不分组；特别复杂的流程按功能模块分组（见 SKILL「生成画布」）。互不连线的几段（如两个独立接口）不用写坐标，build 按 spec 里的先后自动排开。
+
+```json
+{
+  "nodes": [
+    { "key": "g-query", "group": "查询" },
+    { "key": "q-hook", "parent": "g-query", "bundle": "buildify/core", "name": "WebhookTriggerNode", "summary": "查询请求",
+      "parameters": { "path": "/orders", "methods": ["GET"],
+        "options": { "cors": { "enabled": false, "allowedOrigins": "*", "allowedMethods": ["GET"] } } } },
+    { "key": "q-reply", "parent": "g-query", "bundle": "buildify/core", "name": "WebhookResponseNode", "summary": "返回订单" },
+    { "key": "g-refund", "group": "退款" },
+    { "key": "r-hook", "parent": "g-refund", "bundle": "buildify/core", "name": "WebhookTriggerNode", "summary": "退款请求",
+      "parameters": { "path": "/refund", "methods": ["POST"],
+        "options": { "cors": { "enabled": false, "allowedOrigins": "*", "allowedMethods": ["POST"] } } } },
+    { "key": "r-reply", "parent": "g-refund", "bundle": "buildify/core", "name": "WebhookResponseNode", "summary": "返回结果" }
+  ],
+  "edges": [["q-hook", "q-reply"], ["r-hook", "r-reply"]]
+}
+```
+
+- 一个模块一个框，组内每个节点写 `parent`；模块之间照常连边，可以跨框。分支跟着所在模块，不要再加框。
+- 不要顺手给每个框加说明批注，用户要求时才加（见 [comment-node.md](comment-node.md)）。

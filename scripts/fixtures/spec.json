@@ -1,0 +1,35 @@
+{
+  "direction": "TB",
+  "nodes": [
+    { "key": "g-daily", "group": "天气日报" },
+    { "key": "cron", "parent": "g-daily", "bundle": "buildify/core", "name": "SchedulerNode", "summary": "每天8点",
+      "parameters": { "zoneId": "Asia/Shanghai", "triggerType": "daily", "triggerHours": 8, "triggerMinutes": 0 } },
+    { "key": "http", "parent": "g-daily", "bundle": "buildify/core", "name": "HttpRequestNode", "summary": "拉取预报",
+      "parameters": { "url": "https://api.open-meteo.com/v1/forecast?latitude=39.90&longitude=116.41&daily=weather_code" } },
+    { "key": "fmt", "parent": "g-daily", "bundle": "buildify/core", "name": "JsFunctionNode", "summary": "组装日报",
+      "parameters": { "code": "// 组装钉钉日报\n// 入参：msg.output.body.daily；出参：{ title, text }\n\n// --- 1. 返回下游 ---\nreturn { title: '北京天气', text: JSON.stringify(msg.output.body.daily) };" } },
+    { "key": "send", "parent": "g-daily", "bundle": "buildify/dingtalk-bot", "name": "SendMarkdownMsgNode", "summary": "发送日报",
+      "parameters": { "title": "={{msg.title}}", "text": "={{msg.text}}" },
+      "credentials": { "credentialsId": { "type": "DingTalkBotCredentials", "name": "test-prod" } } },
+    { "key": "alarm", "parent": "g-daily", "bundle": "buildify/core", "name": "JsFunctionNode", "summary": "组装告警",
+      "parameters": { "code": "// 接口失败时拼告警\n// 入参：msg.error；出参：{ title, text }\n\n// --- 1. 返回下游 ---\nreturn { title: '天气接口失败', text: msg.error.code + '：' + msg.error.message };" } },
+    { "key": "send-alarm", "parent": "g-daily", "bundle": "buildify/dingtalk-bot", "name": "SendMarkdownMsgNode", "summary": "失败通知",
+      "parameters": { "title": "={{msg.title}}", "text": "={{msg.text}}" },
+      "credentials": { "credentialsId": { "type": "DingTalkBotCredentials", "name": "test-prod" } } },
+
+    { "key": "hook", "bundle": "buildify/core", "name": "WebhookTriggerNode", "summary": "接收请求",
+      "parameters": { "path": "/weather/today", "methods": ["GET"],
+        "options": { "cors": { "enabled": false, "allowedOrigins": "*", "allowedMethods": ["GET"] } } } },
+    { "key": "reply", "bundle": "buildify/core", "name": "WebhookResponseNode", "summary": "返回结果",
+      "parameters": { "responseType": "custom", "outputType": "json", "jsonValue": "={{msg}}" } },
+    { "key": "doc", "comment": "**接口说明**：查询今天的天气\n\n**请求方式**：`GET`\n\n**请求路径**：`/weather/today`", "width": 480 }
+  ],
+  "edges": [
+    ["cron", "http"],
+    ["http", "fmt"],
+    ["fmt", "send"],
+    { "from": "http", "to": "alarm", "out": "Failure", "description": { "Failure": "天气接口失败时告警" } },
+    ["alarm", "send-alarm"],
+    ["hook", "reply"]
+  ]
+}

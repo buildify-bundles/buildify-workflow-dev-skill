@@ -1,7 +1,7 @@
 # 表达式：按 uiComponent 选语法
 
 权威说明：[表达式类型总览](https://docs.buildify.cn/expr.html)、[JSON 表达式](https://docs.buildify.cn/concepts/json_expr.html)。
-占位名一律 `msg`，不要用 `$json`。触发器字段在根级（`msg.xxx`），处理节点结果在 `msg.output`。
+占位名一律 `msg`，不要用 `$json`。触发器字段在根级（`msg.xxx`），处理节点结果在 `msg.output`。**例外：`JsFunctionNode` 的返回值直接成为下游的整个 `msg`**，JS 返回 `{ title, text }` 时下游写 `={{msg.title}}`，不是 `msg.output.title`；要保留上游字段就在 JS 里把它们一起返回（或 `msg.title = …; return msg;`）。`build.mjs` 会对 JS 下游里的 `msg.output` 报 WARNING。
 
 写 `data.parameters` 前先看 `node-properties` 的 **`uiComponent`**。不要把 JSON 的 `=` 前缀套到 SQL 或纯文本上。
 

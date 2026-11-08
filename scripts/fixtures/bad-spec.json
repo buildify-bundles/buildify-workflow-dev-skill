@@ -1,0 +1,9 @@
+{
+  "nodes": [
+    { "key": "http", "bundle": "buildify/core", "name": "HttpRequestNode", "summary": "拉取预报",
+      "parameters": { "urll": "https://example.com" } },
+    { "key": "fmt", "bundle": "buildify/core", "name": "JsFunctionNode", "summary": "组装",
+      "parameters": { "code": "// 组装\nreturn msg;" } }
+  ],
+  "edges": [["http", "fmt", "Sucess"]]
+}
