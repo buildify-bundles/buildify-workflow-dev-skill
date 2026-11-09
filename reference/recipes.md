@@ -118,8 +118,26 @@ buildify --json workflow save-draft -p "$PROJ" -w "$WF" -f flow.json
 }
 ```
 
-- `{ "id": 旧 id, … }` 不写 `name` 表示改这个节点：`parameters` 按键合并，`summary` / `credentials` / `parent` 覆盖。旧 id 不会变。
-- 边两端可以写新节点的 key，也可以写旧节点 id。`remove` 写旧节点 id（连同它的边一起删）或旧边 id。上面就是在两个节点之间插入一个节点。
+只改参数（id 不变）：
+
+```json
+{ "id": "n-qvsX4Sqs", "summary": "拉取预报", "parameters": { "timeout": 20 } }
+```
+
+切换节点类型（换新 id，边跟着改；不要写 `remove`）：
+
+```json
+{
+  "nodes": [
+    { "id": "n-qvsX4Sqs", "bundle": "buildify/core", "name": "JsFunctionNode", "summary": "组装报文",
+      "parameters": { "code": "// 入参：msg\n// 出参：下游整个 msg\n\n// --- 1. 返回 ---\nreturn msg;" } }
+  ]
+}
+```
+
+- `{ "id": 旧 id, … }` **不写 `name`**（或 `name`+包名与画布相同）：改这个节点，`parameters` 按键合并，`summary` / `credentials` / `parent` 覆盖，**旧 id 不变**。
+- `{ "id": 旧 id, "bundle", "name": 新类型, … }`：`name` 或包名与画布不同时是**切换类型**。build 分配新的 `n-` id、按新类型表单重建 `data`（不合并旧参数），入边/出边改到新 id；旧 id 仍可写在边和 `parent` 里，会解析到新节点。切换后出边里新类型没有的出口会删掉，某条边一个出口都不剩就 ERROR——在 `edges` 里用旧 id 写上新出口即可。不要用 `remove` 再另起 key（那样边不会自动接上）。
+- 边两端可以写新节点的 key，也可以写旧节点 id。`remove` 写旧节点 id（连同它的边一起删）或旧边 id。上面插入 WaitNode 的例子就是在两个节点之间插入一个节点。
 - `--base` 直接吃 `get-draft` 的整份响应。`--fetch` 会补拉草稿里已有节点的目录。
 - 不要从空 spec 覆盖已有草稿，除非用户明确要求重写。改节点职责时同步改 `summary`。沿用草稿的 `direction`；build 会整图重排，只改参数时加 `--no-layout`；用户手动调过布局时先问。
 - 用户要看某一历史版本时用 `workflow get-version`，确认恢复后把那份 `workflowJson` 当 `--base` 走同样的流程。

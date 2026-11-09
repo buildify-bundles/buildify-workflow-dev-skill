@@ -30,8 +30,12 @@
  * 表单默认值、边上整份 relation 对象、凭证同时写进 data.credentials 与 parameters、分组框固定样式、多段粗略原点、
  * 顶层 direction / errors / viewport。出口名、参数键、凭证槽不在目录里时报 ERROR 并且不写文件。
  *
- * --base 在已有画布上改：旧节点 id 不变；spec 里 `{ "id": "n-旧id", "parameters": {…} }`（不写 name）表示改这个节点，
- * parameters 按键合并；边的两端可以写 spec 的 key，也可以写旧节点 id。base 可以是画布，也可以是 get-draft 的整份响应。
+ * --base 在已有画布上改：
+ *   - 只改参数 / summary / credentials：`{ "id": "n-旧id", "parameters": {…} }`（不写 name，或 name+bundle 与画布相同）→ 旧 id 不变，parameters 按键合并。
+ *   - 切换节点类型：`{ "id": "n-旧id", "bundle": "…", "name": "新类型", "parameters": {…} }`（name 或包名与画布不同）→
+ *     分配新的 n- id，按新类型表单重建 data（不合并旧参数），边的 source/target 与边 id 跟着改；旧 id 本张画布不再用，避开按 id 缓存的旧节点。
+ *     切换后出边里新类型没有的出口会删掉；某条边一个出口都不剩就 ERROR。切换不要写 remove（remove 是删了重加，边不会自动接上）。
+ *   边的两端、parent 可以写 spec 的 key，也可以写旧节点 id（切换后仍解析到新节点）。base 可以是画布，也可以是 get-draft 的整份响应。
  *
  * 退出码：0 已写入（可能有 WARNING）；1 spec 有 ERROR，没有写文件；3 文件、目录缓存或排版失败。
  */
@@ -381,6 +385,64 @@ function relationSchema(node, lookup) {
   return { schema: Array.isArray(found.relations?.schema) ? found.relations.schema : null, custom }
 }
 
+/** 把边上所有指向 oldId 的 source/target 改成 newId，边 id 重算为 {source}_{target}；撞车的边按出口名合并。 */
+function rewireNodeId(flow, oldId, newId) {
+  const result = []
+  const byPair = new Map()
+  for (const edge of flow.edges) {
+    const source = edge.source === oldId ? newId : edge.source
+    const target = edge.target === oldId ? newId : edge.target
+    const id = `${source}_${target}`
+    const relations = clone(edge.data?.relations ?? []) ?? []
+    const kept = byPair.get(id)
+    if (kept) {
+      for (const rel of relations) {
+        if (!kept.data.relations.some(item => item.name === rel.name)) kept.data.relations.push(rel)
+      }
+      continue
+    }
+    const next = { ...edge, id, source, target, data: { ...(edge.data ?? {}), relations } }
+    byPair.set(id, next)
+    result.push(next)
+  }
+  flow.edges = result
+}
+
+/** 原地改参数 / summary / credentials（类型不变）。 */
+function patchExistingNode(item, target, lookup, report, pendingParents, keyToId, rows) {
+  const data = target.data ?? (target.data = {})
+  if (item.summary !== undefined) data.summary = item.summary
+  if (item.disabled !== undefined) {
+    if (item.disabled === true) data.disabled = true
+    else delete data.disabled
+  }
+  const mergedParams = { ...(data.parameters ?? {}), ...(item.parameters ?? {}) }
+  const mergedCreds = { ...(data.credentials ?? {}), ...(item.credentials ?? {}) }
+  if (data.bundleName && data.name) {
+    const check = createReport()
+    const rebuilt = buildExecData({
+      key: item.key ?? item.id, bundle: `${data.bundleName}@${data.bundleVersion}`, name: data.name,
+      summary: data.summary, parameters: mergedParams, credentials: mergedCreds,
+    }, lookup, check, false)
+    for (const entry of check.items) report.items.push(entry)
+    if (rebuilt) {
+      data.parameters = rebuilt.parameters
+      if (rebuilt.credentials) data.credentials = rebuilt.credentials
+      else delete data.credentials
+    }
+  } else data.parameters = mergedParams
+  if (item.parent !== undefined) pendingParents.push({ node: target, parent: item.parent })
+  if (item.key) {
+    if (keyToId.has(item.key) && keyToId.get(item.key) !== target.id) {
+      report.error(`节点 ${item.key}`, 'key 重复')
+      return
+    }
+    keyToId.set(item.key, target.id)
+  }
+  keyToId.set(item.id, target.id)
+  rows.push([item.key ?? item.id, target.id, `${data.name ?? target.type}（修改）`, data.summary ?? ''])
+}
+
 // ---------------------------------------------------------------------------
 // 多段原点
 // ---------------------------------------------------------------------------
@@ -487,38 +549,58 @@ async function main() {
   const order = []
   const rows = []
   const pendingParents = []
+  const switched = []
 
   for (const item of spec.nodes) {
     if (!isObject(item)) {
       report.error('nodes', `有一项不是对象: ${JSON.stringify(item)}`)
       continue
     }
-    const patchTarget = item.id && !item.name && !item.group && item.comment === undefined
-      ? flow.nodes.find(node => node.id === item.id) : null
-    if (item.id && !item.name && !item.group && item.comment === undefined) {
-      if (!patchTarget) {
-        report.error(`节点 ${item.id}`, '没写 name，又不是 --base 画布里已有的节点 id')
+    const existing = item.id ? flow.nodes.find(node => node.id === item.id) : null
+    if (item.id && existing && item.group === undefined && item.comment === undefined) {
+      if (!item.name) {
+        patchExistingNode(item, existing, lookup, report, pendingParents, keyToId, rows)
         continue
       }
-      const data = patchTarget.data ?? (patchTarget.data = {})
-      if (item.summary !== undefined) data.summary = item.summary
-      if (item.disabled !== undefined) data.disabled = item.disabled === true
-      const merged = { ...data, parameters: { ...(data.parameters ?? {}), ...(item.parameters ?? {}) } }
-      if (data.bundleName && data.name) {
-        const check = createReport()
-        const rebuilt = buildExecData({
-          key: item.id, bundle: `${data.bundleName}@${data.bundleVersion}`, name: data.name, summary: merged.summary,
-          parameters: merged.parameters, credentials: { ...(data.credentials ?? {}), ...(item.credentials ?? {}) },
-        }, lookup, check, false)
-        for (const entry of check.items) report.items.push(entry)
-        if (rebuilt) {
-          data.parameters = rebuilt.parameters
-          if (rebuilt.credentials) data.credentials = rebuilt.credentials
-        }
-      } else data.parameters = merged.parameters
-      if (item.parent !== undefined) pendingParents.push({ node: patchTarget, parent: item.parent })
-      keyToId.set(item.key ?? item.id, item.id)
-      rows.push([item.key ?? item.id, item.id, `${data.name ?? patchTarget.type}（修改）`, data.summary ?? ''])
+      if (!item.bundle) {
+        report.error(`节点 ${item.key ?? item.id}`, '缺少 bundle（如 "buildify/core"）')
+        continue
+      }
+      const { bundleName } = splitBundle(item.bundle)
+      const sameType = existing.data?.name === item.name && existing.data?.bundleName === bundleName
+      if (sameType) {
+        patchExistingNode(item, existing, lookup, report, pendingParents, keyToId, rows)
+        continue
+      }
+      if (item.key && keyToId.has(item.key)) {
+        report.error(`节点 ${item.key}`, 'key 重复')
+        continue
+      }
+      const data = buildExecData(item, lookup, report, args.defaults)
+      if (!data) continue
+      const id = newId()
+      const node = { id, type: 'default', position: { ...(existing.position ?? { x: 0, y: 0 }) }, data }
+      if (existing.sourcePosition) node.sourcePosition = existing.sourcePosition
+      if (existing.targetPosition) node.targetPosition = existing.targetPosition
+      if (existing.parentNode) {
+        node.parentNode = existing.parentNode
+        if (existing.extent) node.extent = existing.extent
+      }
+      flow.nodes = flow.nodes.filter(entry => entry.id !== existing.id)
+      flow.nodes.push(node)
+      rewireNodeId(flow, existing.id, id)
+      if (isObject(flow.errors)) delete flow.errors[existing.id]
+      baseIds.add(id)
+      if (item.key) keyToId.set(item.key, id)
+      keyToId.set(existing.id, id)
+      order.push(id)
+      if (item.parent !== undefined) pendingParents.push({ node, parent: item.parent })
+      switched.push(node)
+      rows.push([item.key ?? existing.id, id, `${data.name}（切换）`, data.summary ?? ''])
+      continue
+    }
+    if (item.id && !item.name && !item.group && item.comment === undefined && !existing) {
+      report.error(`节点 ${item.id}`, '没写 name，又不是 --base 画布里已有的节点 id')
       continue
     }
     if (!item.key) {
@@ -607,6 +689,20 @@ async function main() {
     const created = { id, type: 'default', source, target, data: { relations }, label: '', zIndex: 2000 }
     flow.edges.push(created)
     edgeById.set(id, created)
+  }
+
+  for (const node of switched) {
+    const { schema, custom } = relationSchema(node, lookup)
+    const pool = [...(schema ?? []), ...custom]
+    const allowed = new Set(pool.map(item => item.name))
+    for (const edge of flow.edges.filter(entry => entry.source === node.id)) {
+      const relations = Array.isArray(edge.data?.relations) ? edge.data.relations : []
+      edge.data.relations = relations.filter(rel => allowed.has(rel.name))
+      if (!edge.data.relations.length) {
+        report.error(`边 ${edge.source} → ${edge.target}`,
+          `切换成 ${node.data.name} 后没有可用出口（可用: ${pool.map(item => item.name).join(' / ') || '无'}）；在 spec.edges 里用旧 id 写上新出口`)
+      }
+    }
   }
 
   for (const edge of flow.edges) {

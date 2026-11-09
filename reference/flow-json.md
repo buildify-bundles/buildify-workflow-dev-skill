@@ -26,7 +26,7 @@
 
 | 字段 | 必填 | 含义 |
 |------|------|------|
-| `id` | 是 | **`n-` + 8 位 nanoid**（如 `n-k7mX2pL9`），本流程内唯一。已有草稿的旧 id 不要改。不要用 `n1` / `trigger` 这类可读名 |
+| `id` | 是 | **`n-` + 8 位 nanoid**（如 `n-k7mX2pL9`），本流程内唯一。只改参数时旧 id 不要改；`data.name` 或 `data.bundleName` 变了必须换新 id（避开按 id 缓存的旧节点），边的 `source` / `target` 与边 id（`{source}_{target}`）一并改。不要用 `n1` / `trigger` 这类可读名 |
 | `type` | 否 | Vue Flow 视觉类型，用 `"default"`。它**不是** bundle 节点类型，执行节点的类型是 `data.name` |
 | `position` / `sourcePosition` / `targetPosition` | 脚本写 | 排版脚本计算。`TB` 是 `bottom` / `top`，`LR` 是 `right` / `left`。分组框/批注不写锚点 |
 | `data.name` | 是 | Bundle 节点 id，例如 `JsFunctionNode` |
