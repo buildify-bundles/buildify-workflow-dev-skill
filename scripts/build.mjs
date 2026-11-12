@@ -27,7 +27,7 @@
  *   }
  *
  * 脚本补齐：`n-` + nanoid 的节点 id、`{source}_{target}` 的边 id、目录里的 bundleVersion / icon / label / isTrigger、
- * 表单默认值、边上整份 relation 对象、凭证同时写进 data.credentials 与 parameters、分组框固定样式、多段粗略原点、
+ * 表单默认值、边上整份 relation 对象、凭证同时写进 data.credentials 与 parameters、分组框（只写标题，样式走系统默认）、多段粗略原点、
  * 顶层 direction / errors / viewport。出口名、参数键、凭证槽不在目录里时报 ERROR 并且不写文件。
  *
  * --base 在已有画布上改：
@@ -52,10 +52,6 @@ import {
 const HERE = dirname(fileURLToPath(import.meta.url))
 const USAGE = 'usage: node scripts/build.mjs spec.json -o flow.json [--base draft.json] [--dir DIR] [--fetch [--profile NAME]] [--no-defaults] [--no-layout]\n'
 const DECORATION_TYPES = new Set(['text', 'comment', 'notes'])
-const GROUP_STYLE = {
-  groupColor: '#4a535c', groupOpacity: 0.03, groupRadius: 12,
-  groupBorderStyle: 'solid', groupBorderWidth: 1.5, groupBorderColor: '#4a535c',
-}
 const SEGMENT_GAP = 1000
 const ID_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
 
@@ -325,7 +321,7 @@ function groupNode(spec, id) {
       label: 'group',
       summary: label,
       isLayoutNode: true,
-      parameters: { groupLabel: label, ...GROUP_STYLE, ...(spec.color ? { groupColor: spec.color } : {}) },
+      parameters: { groupLabel: label },
     },
   }
 }

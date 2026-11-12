@@ -17,6 +17,8 @@ buildify --json config profiles
 
 `config set-key api_key` 只更新**当前** profile；还没有 profile 时才写旧的单密钥。新密钥用 `add-profile`。不要 `--api-key`，不要把明文写进仓库、`.env` 或对话。保存后只展示 `config profiles` / `config show` 的掩码。
 
+`config profiles` 返回 `current` 和每个 profile 的 `name` / `tenantId` / `keyName` / `keyPrefix` / `current`。同一个 `tenantId` 可能存了多把密钥（多个 profile），按 `tenantId` 去重才是工作区数。没有工作区显示名，对用户用 profile 名称呼。新建流程时怎么选工作区见 SKILL「多个工作区时新建」。
+
 选择顺序：`--api-key` / `BUILDIFY_OPENAPI_API_KEY` → `--profile` / `BUILDIFY_OPENAPI_PROFILE` → 仓库 `.buildify-workspace`（只有公开的 `tenantId`）→ `[openapi].current` → 唯一一把已存密钥。
 
 `--json` 退出码 2 时按 `data.reason` 处理：
@@ -130,6 +132,7 @@ HTTP 接口的试跑在 save-draft 和 test-run 之间加一步连通检测，te
 
 这些命令会改运行位置、凭证或删数据。用户没提出来不要跑，能点选就点选，确认前不要执行。
 
+- **换项目 / 换工作区**：没有移动流程的命令。按 SKILL「项目：新建必选，切换重选」在目标项目复制重建，原流程保留，问过用户才删。跨工作区时读源草稿用源 `--profile`，其余都用目标 `--profile`。
 - **改名**：`project update` / `workflow update` 必传 `-n`。用户没说要改简介就不传 `--remark`，原简介会留下。
 - **加服务器**：`assign-workers` 加的是绑定。流程已发布时顺带把**当前线上版本**发到新服务器（不是草稿），告诉用户这一点；草稿仍要按推荐循环 save-draft / 试跑 / deploy。`needDeploy: false` 表示没有新的部署。用户要看这次结果时再调一次 `workflow deployment -d`。
 - **移除服务器**：`unassign-workers`。没发布过的立刻解绑；已发布的变成待移除并下线，绑定还在，服务器确认前 `workflow delete` 返回 409「当前流程存在关联部署服务器」。

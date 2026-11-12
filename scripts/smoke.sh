@@ -40,6 +40,7 @@ if (!flow.edges.every(edge => edge.id === `${edge.source}_${edge.target}`)) fail
 if (!flow.edges.every(edge => edge.data.relations.every(rel => rel.name && rel.label))) fail('出口缺 name / label')
 const group = flow.nodes.find(node => node.type === 'group')
 if (!group?.style?.width) fail('分组框没有排版尺寸')
+if (JSON.stringify(Object.keys(group.data.parameters)) !== '["groupLabel"]') fail('分组 parameters 应只有 groupLabel，样式走系统默认')
 if (exec.filter(node => node.parentNode === group.id).length !== 6) fail('分组里应有 6 个节点')
 const send = exec.find(node => node.data.summary === '发送日报')
 if (send.data.credentials?.credentialsId?.name !== 'test-prod' || send.data.parameters.credentialsId?.name !== 'test-prod') fail('凭证没同时写进 credentials 和 parameters')

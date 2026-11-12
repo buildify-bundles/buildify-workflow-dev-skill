@@ -11,7 +11,8 @@ description: >-
   HTTP 接口, 试跑, @test, 发布, 版本号, 凭证, 服务器, 节点管理, 批注, 节点分组,
   横排, 竖排, 多段, 独立接口, 入站认证, 访问地址, 飞书卡片, 失败告警, 缺少节点,
   验签, 回调, 微信支付, 支付宝, Stripe, 部署记录, 历史版本, 绑定服务器, 换服务器,
-  删除流程, 改名, 改凭证, 删除凭证, 凭证被哪些流程使用.
+  删除流程, 改名, 改凭证, 删除凭证, 凭证被哪些流程使用, 切换项目, 换项目,
+  建到哪个项目, 换到别的项目, 工作区, 切换工作区, 多个工作区.
 ---
 
 # Buildify 流程编排
@@ -28,8 +29,8 @@ description: >-
 
 ```
 流程编排进度：
-- [ ] 1. CLI 就绪：buildify --json key test（见「工作区与密钥」）
-- [ ] 2. 定项目、流程（见「沿用已有，只问缺的」）
+- [ ] 1. CLI 就绪：buildify --json key test，再 config profiles 看有几个工作区（见「工作区与密钥」）
+- [ ] 2. 定工作区和项目（新建每次点选确认）、流程（见「沿用已有，只问缺的」「项目：新建必选，切换重选」）
 - [ ] 3. 定服务器：改已有先 workflow workers（只要 deleteStatus 0）；画布默认 TB，试跑通过后默认发布
 - [ ] 4. 发现节点：bundle list -k → node $S/catalog.mjs fetch -b 包 -n 节点,节点 …（一次拉齐要用的节点）；缺包或缺节点 → 见「环境里没有对应节点」
 - [ ] 5. 凭证：只问空槽，三选一（reference/credentials.md）
@@ -51,7 +52,7 @@ description: >-
 | 场景 | 读 |
 |---|---|
 | 命令、参数、退出码、save-draft 冲突、改服务器、改/删凭证、删除、部署记录、历史版本 | [reference/cli.md](reference/cli.md) |
-| spec 骨架：定时拉取推送、Webhook 应答、分支、改已有、分组 | [reference/recipes.md](reference/recipes.md) |
+| spec 骨架：定时拉取推送、Webhook 校验应答、分支、改已有、分组、事务与幂等 | [reference/recipes.md](reference/recipes.md) |
 | 画布 JSON 字段、边、分组、批注（手改 JSON 或读懂已有草稿时） | [reference/flow-json.md](reference/flow-json.md) |
 | 参数里的表达式（按 `uiComponent`）、JS 代码注释、飞书卡片与失败原因 | [reference/expressions.md](reference/expressions.md) |
 | 凭证三选一、现在创建 | [reference/credentials.md](reference/credentials.md) |
@@ -66,12 +67,12 @@ description: >-
 | 命令 | 做什么 |
 |---|---|
 | `node $S/catalog.mjs fetch -b buildify/core -n A,B -b 包2 -n C [-V 版本] [--profile P]` | 并行拉 `bundle nodes` / `node-properties` / `node-relations` 存进 `/tmp/buildify-catalog`，打印摘要。没有 `-n` 只列包里的节点。`show` 只读缓存 |
-| `node $S/build.mjs spec.json -o flow.json [--base draft.json] [--fetch]` | 按 spec 生成画布：`n-` + nanoid、边 id、目录字段、表单默认值、整份出口对象、凭证、分组样式、多段原点、顶层 `direction` / `errors`，最后调 `layout.mjs`。`--base` 只改参数时旧 id 不变；切换 `name`/包名时换新 id 并改写边。参数键、出口名、凭证槽不对时 ERROR 且不写文件 |
+| `node $S/build.mjs spec.json -o flow.json [--base draft.json] [--fetch]` | 按 spec 生成画布：`n-` + nanoid、边 id、目录字段、表单默认值、整份出口对象、凭证、分组框（只写标题）、多段原点、顶层 `direction` / `errors`，最后调 `layout.mjs`。`--base` 只改参数时旧 id 不变；切换 `name`/包名时换新 id 并改写边。参数键、出口名、凭证槽不对时 ERROR 且不写文件 |
 | `node $S/layout.mjs flow.json [--direction TB\|LR] [--group 分组id] [--check]` | 单独重排（build 已自动跑） |
 | `node $S/check.mjs flow.json --catalog-dir /tmp/buildify-catalog --fetch [--fix]` | 查边、出口、图标；按画布 `bundleVersion` 自动取版本一致的缓存，缺的再拉 |
 | `node $S/result.mjs validate\|test-run\|deploy 文件 [--flow flow.json]` | 整理 CLI 输出；`--write-errors` 写回顶层 `errors`；`--node` / `--path` 看某个节点的输出 |
 
-退出码统一：0 通过；1 有 ERROR / 没通过（按输出修）；3 文件、参数或拉取失败。多工作区时 `catalog.mjs` / `build.mjs --fetch` / `check.mjs --fetch` 都加 `--profile`。
+退出码统一：0 通过；1 有 ERROR / 没通过（按输出修）；3 文件、参数或拉取失败。多工作区时 `catalog.mjs` / `build.mjs --fetch` / `check.mjs --fetch` 都加 `--profile`，缓存目录也按工作区分开：`catalog.mjs` / `build.mjs` 加 `--dir /tmp/buildify-catalog/<profile>`，`check.mjs` 的 `--catalog-dir` 用同一个目录。缓存只按「包@版本」存，不分开会串用别的工作区的同名包。
 
 ## 生成画布（步骤 6）
 
@@ -81,6 +82,12 @@ build 报的 WARNING 都要看：必填没填（含 Collection / Fixed 里的必
 
 下面是 spec 里仍要自己判断的规则：
 
+- **默认易读。** 用户给了具体结构就照做，否则按这几条编排：
+  - 主流程从触发器一路往下是一条直线，读的顺序就是执行顺序；分支短，尽快在应答或告警节点结束，不绕回主线。
+  - 一个节点只做一件事，`summary` 用业务语言写它做什么（「校验参数」「查询订单」「返回结果」）。
+  - 能用现成节点就不用 JS：校验用 `ValidateNode`，判断用 `IfNode` / `SwitchNode`，改字段用 `SetNode`，调接口用 `HttpRequestNode`。JS 只做组装报文这类现成节点做不了的事，一个 JS 节点不塞几段不相关的逻辑。
+  - 不加只透传的 `EmptyNode` / `SetNode`，不为一个判断拆好几层 If。
+  - 不同接口、不同触发器各自一段（见「HTTP 接口」一个方法一条流程），不合进一段再分流。
 - **`summary`**：这颗节点在本流程里的职责，**≤8 字**（如「接收请求」「查询设备」），画布默认显示它，不要照抄目录 `summary`。
 - **参数**：只写要改的键，默认值脚本会从表单补。表达式按字段 `uiComponent` 选语法：`JsonExpressionInput` 默认整字段 `"={{msg.xxx}}"` 保留类型，要拼字符串才写 `"=前缀 {{msg.xxx}}"`；`SqlEditor` 用 `#{}` / `${}`；文本及其他用 `{{ }}`。见 [expressions.md](reference/expressions.md)。
 - **取值层级**：触发器字段在 `msg.xxx`；普通节点结果在 `msg.output.xxx`；**`JsFunctionNode` 的返回值就是下游的整个 `msg`**，取它返回的字段写 `msg.xxx`。
@@ -89,7 +96,7 @@ build 报的 WARNING 都要看：必填没填（含 Collection / Fixed 里的必
 - **出口**：一对节点只连一条边，多个出口接同一下游写 `["a","b","Success,Failure"]`。想让某个出口的分支在左 / 上，就把它的边写在前面。出口说明可以改写成本流程里的含义（`description`）。
 - **循环允许，但必须有出口。** 用户要重试、轮询、等到条件满足时，从下游出口连回上游入口即可，不要为了消环拆边或复制节点。环上至少要有一条边离开循环（If / Switch 的另一支、失败出口、次数用尽、超时等）。没有就补退出条件再保存，条件不清楚就问用户。
 - **默认不加批注，也不写接口文档。** 接口的方法、路径、访问地址写在对话汇报里。用户明确要求「写接口文档 / 加说明 / 加批注」时才在 spec 里加 `comment`，正文写法见 comment-node.md。
-- **默认不分组，特别复杂的流程按功能模块分组。** 执行节点大约 15 个以上，或一段里能清楚分出几块职责（如「接收校验」「下单扣款」「通知告警」）时，一个模块一个 `group`，组内节点写 `parent`。成功/失败分支跟着所在模块，不要为分支单独加框，也不要每个节点一个框。用户明确要求时照做，明确不要时不分。只改参数、不改结构时，不要为了补分组去重排已有画布。
+- **默认不分组，特别复杂的流程按功能模块分组。** 执行节点大约 15 个以上，或一段里能清楚分出几块职责（如「接收校验」「下单扣款」「通知告警」）时，一个模块一个 `group`，组内节点写 `parent`。成功/失败分支跟着所在模块，不要为分支单独加框，也不要每个节点一个框。用户明确要求时照做，明确不要时不分。只改参数、不改结构时，不要为了补分组去重排已有画布。分组框只写标题，不设边框和背景色，走系统默认样式；用户明确要求时才写。
 - **方向**：`direction` 默认 `TB`；用户要横排才 `LR`；改已有沿用草稿。
 - **切换节点类型**：改已有时若换 `name` 或包名（`bundle`），spec 仍写旧节点 `id`，build 会分配**新的** `n-` id 并改写边，避开运行时按 id 缓存的旧节点；参数按新类型表单重建，不要写 `remove`。只改参数 / summary / 凭证时保持旧 id。
 
@@ -109,11 +116,11 @@ build 报的 WARNING 都要看：必填没填（含 Collection / Fixed 里的必
 
 ## 项目 / 流程 / 服务器 / 凭证：沿用已有，只问缺的
 
-已经能确定的**直接用**，不要再问，也不要列成待确认。一次消息里只问还缺的项。
+已经能确定的**直接用**，不要再问，也不要列成待确认。一次消息里只问还缺的项。**新建流程时的项目例外**：每次都要点选确认，见本节末「项目：新建必选，切换重选」。
 
 | | 改已有 | 新建，用户已给 | 还没有 |
 |---|---|---|---|
-| **项目** | 这条流程所在的项目 | 用户点的项目 | `project list`，让他选 |
+| **项目** | 这条流程所在的项目 | 用户点的项目，仍放进项目题第一项确认 | `project list`，让他选 |
 | **流程** | 这一条，打开草稿改 | 用户给的名称 | 问新建还是改哪条；新建名没给时建议名放第一项 |
 | **服务器** | 用户点名的；没点名用 `workflow workers` 里 `deleteStatus` 为 0 的那台。不要用 `workflow published` 来选 | 用户点的那台 | `project workers` 列出让他选 |
 | **凭证** | 草稿里该槽已写的 `{type, name}` | 用户点的那条 | 只问空槽，见 [credentials.md](reference/credentials.md) |
@@ -132,6 +139,35 @@ build 报的 WARNING 都要看：必填没填（含 Collection / Fixed 里的必
 - 改已有先 `workflow workers`。只有一台已绑定且在线时直接用，多台再问。一台都没有时从 `project workers` 里选，用户点了之后先 `assign-workers`，再发布。`deploy` 报「未绑定」就是还没做这一步。
 - 节点参数（如 Webhook 路径）按表单写进 spec，校验 ERROR 再按节点汇总一次问，不要为每个字段单独打断一轮。
 
+### 项目：新建必选，切换重选
+
+- **新建流程时项目每次都出一道选择题**，和服务器、凭证、流程名放在同一次提问里。第一项是本次对话最近用的项目（标签写「名称 — 上次使用，推荐」；没有就用用户点名的那个），其余列出 `project list` 里的项目。只有一个项目时也要出题。题干写明工作区（用 profile 名称呼，CLI 不返回工作区显示名）。
+- 同一次对话里接着新建第二条流程，也要再出这道题，不要默认沿用上一条的项目。改已有流程时沿用它所在的项目，不出题。
+- 项目没定时，按上面「查候选要一次查齐」并行查各项目的 `project workers` 和 `project credentials`，同一次提问就能给出各项目对应的服务器和凭证。
+- `workflow create` 前在消息里写一句：「将在 工作区 X / 项目 Y 创建流程「Z」，服务器 W」。
+
+**多个工作区时新建**（`config profiles` 按 `tenantId` 去重后不止一个，见「工作区与密钥」）：
+
+- 工作区已经定了就只列它的项目：用户点名了工作区或 profile、设了 `BUILDIFY_OPENAPI_PROFILE`、仓库有 `.buildify-workspace`，或本次对话已经在某个工作区建过流程（仍按上面规则把它放第一项确认）。
+- 没定时**不要默认用 `current`**。在一条 shell 命令里并行查每个工作区的 `project list --profile P`，项目题的选项写成「工作区 / 项目」（如「emag / 订单中心」），同一工作区的项目排在一起，`current` 那个工作区排最前，但不标「推荐」，除非本次对话用过。
+- 选项超过 12 个时拆成两步：先一道工作区题（每个工作区一项，标签写 profile 名和项目数），选完再出项目题，服务器、凭证和项目放在同一轮问。
+- 某个工作区 `project list` 失败（401、缺权限）时，选项里不列它，在题干里写一句「工作区 X 暂时查不到项目：原因」，不要因此停下整个提问。
+- 选定后，这条流程的每条 CLI 命令和脚本都加 `--profile <name>`，节点目录缓存用 `/tmp/buildify-catalog/<profile>`（见「脚本速查」）。不要 `config use`。
+
+**切换项目**（用户说「换到 X 项目」「建到别的项目」）：按名称在 `project list` 里匹配，匹配不到或有同名时让用户点选。服务器和凭证按项目隔离，之前选的**全部作废**，对新项目重查 `project workers` / `project credentials`，只把这两项再问一次。同一工作区内换项目，节点目录缓存不用重拉。
+
+**切换工作区**（用户说「换到 emag」「建到另一个工作区」）：按 profile 名匹配，匹配不到就列出 profile 让他点。项目、服务器、凭证全部作废，按上面的多工作区规则重新选；之后的命令改用新的 `--profile`，节点目录换到新工作区的缓存目录重新拉（步骤 4），因为不同工作区装的包和版本可能不同，缺包按「环境里没有对应节点」处理。
+
+**把已有流程换到别的项目**：CLI 没有移动命令，改为复制重建，原流程不动：
+
+1. 源项目 `workflow get-draft` 存成 `draft.json`。
+2. 在目标项目点选服务器，每个凭证槽按三选一重选（[credentials.md](reference/credentials.md)），再 `workflow create` 同名流程。
+3. spec 只写要重绑凭证的节点 `{ "id": "n-…", "credentials": {…} }`，跑 `node $S/build.mjs spec.json --base draft.json --no-layout -o flow.json`。选「使用时再选」的槽要从该节点 `data.credentials` 和 `parameters` 两处手动删掉，再跑 `check.mjs`。
+4. 照常 validate / save-draft / 试跑 / 确认版本号后发布。
+5. 汇报里说明原流程还在原项目（已发布的仍在线），问要不要删除。
+
+目标项目在另一个工作区时：第 1 步用源工作区的 `--profile`，之后都用目标工作区的；第 3 步后跑 `check.mjs --fetch --profile <目标>`（缓存目录用目标工作区的），画布里钉的包或版本在目标工作区没有时，列出缺的包问用户是改用目标工作区已有的版本（`--base` 换版本后重跑 build），还是按「环境里没有对应节点」先补包。删除按 [cli.md](reference/cli.md)「删除」的顺序先移除服务器再 `workflow delete`，确认前不执行。
+
 ## 校验闭环（步骤 7）
 
 `check.mjs` 退出码 1 就按输出改（`--fix` 能合并重复边、补出口 label 和图标）。`workflow validate` 的输出落到文件，用 `result.mjs validate … --write-errors` 读：它只列 `issues`、按节点汇总表单 ERROR 写回顶层 `errors`（环不计入）。对照 `catalog.mjs` 摘要改 spec 重跑 build，或改 JSON，再校验，直到退出码 0。不要跳过校验直接试跑。
@@ -140,7 +176,16 @@ build 报的 WARNING 都要看：必填没填（含 Collection / Fixed 里的必
 
 ## HTTP 接口
 
-入口用当前环境的 Webhook 触发器（通常是 `WebhookTriggerNode`，以目录为准）。它的 `options.cors` 是必填块，不开跨域也要写 `{"enabled": false, "allowedOrigins": "*", "allowedMethods": [与 methods 相同]}`。
+入口用当前环境的 Webhook 触发器（通常是 `WebhookTriggerNode`，以目录为准）。
+
+**一个方法一条流程。** 触发器 `methods` 默认只勾一个方法。需求里同时有查询（GET）和提交（POST）时，各建一个触发器，各自校验、各自应答：可以是同一张画布的两段（见「多段画布」），也可以是两条流程。不要在一个触发器里勾 `GET` + `POST`，再用 `JsFunctionNode` / `IfNode` / `SwitchNode` 按 `msg.method` 分流。只有用户明确要求一条流程处理多个方法，或协议本身要求同一地址支持多个方法（如渠道回调用 GET 验证地址、用 POST 推送消息）时才合在一起，并在汇报里写明原因。
+
+**默认不开跨域。** `options.cors` 是必填块，用户没提跨域、没说浏览器前端要直接调时写 `{"enabled": false, "allowedOrigins": "*", "allowedMethods": [与 methods 相同]}`。`enabled: false` 时这些值不生效，不要为 CORS 单独问用户。用户明确要求时才设 `enabled: true`：
+
+- `allowedOrigins` 写用户给的具体域名，每行一个；没给就和其他缺口放在同一次提问里问，不要默认填 `*`。
+- `allowCredentials` 默认 `false`，要带 Cookie 才开，开了 `allowedOrigins` 就不能是 `*`。
+- `allowedMethods` 与 `methods` 一致；`allowedHeaders` 只写前端实际会发的 Header（开了认证就加 `Authorization` 或 API Key 的 Header 名）。
+- 汇报里开了才写一行允许的来源，没开不提。
 
 **认证先用这个触发器里已有的方式。** 对得上就写 `authType`，不要新做触发器，也不要在下游再验一遍：
 
@@ -157,7 +202,28 @@ build 报的 WARNING 都要看：必填没填（含 Collection / Fixed 里的必
 
 表单里没有 `authType`、需求也对不上上表、又不是原文验签时，才在触发器下游加一个真实存在的校验节点。不要把不存在的 `authType` 写进参数。
 
+**默认校验入参，不合法不往下走。** 读库、调外部接口、改数据之前，先接核心包的 `ValidateNode`（以目录为准），只校验下游真正用到的字段，防止缺参数或参数不合法时误读、误改资源：
+
+- 字段路径不加 `msg.`：路径参数 `pathParams.id`、查询 `query.page`、请求体 `body.userId`。同一字段可写多条，按「必填 → 类型 → 格式 / 范围」排，如 id 用 `pattern` 限成数字或 UUID、分页大小 `max` 封顶、状态用 `oneOf` 限定取值。可选字段打开 `skipIfMissing`，必填不要开。
+- `Invalid` 出口接一个 `WebhookResponseNode` 返回 400，正文带 `msg.output.errors`（每项有 `field`、`check`、`code`、`message`），触发器 `responseMode` 用 `WebhookNode`。`Failure` 是规则本身写错（如正则不合法），按流程已有的失败处理接，不要当成 400。
+- `keepOtherFields` 保持默认 `true`，下游照旧从 `msg.pathParams` / `msg.query` / `msg.body` 取入参，校验结果在 `msg.output`。
+- 不要用 `JsFunctionNode` 手写一套 if 代替 `ValidateNode`；它表达不了的跨字段规则（如结束时间晚于开始时间）才在后面补 JS 或 If。
+- 只有用户明确说不需要，或接口确实没有入参（如「返回当前时间」）时才省掉。汇报里列出校验了哪些字段、什么规则。
+
 访问地址、连通检测和试跑步骤见 [reference/http.md](reference/http.md)。
+
+## 数据一致性与事务
+
+流程会写数据时，编排前先判断是哪种场景；只读流程不用管。先用 `catalog.mjs` 核实当前数据库包有哪些节点（如 `buildify/mysql` 的 `TransactionExecuteNode`：同一事务里按顺序执行多条 SQL，**任一步 SQL 报错**才整体回滚；`ExecuteSqlNode`：单条语句，写入输出 `output.affectedRows`，查询输出 `output.data` / `output.rowCount`）。
+
+- **同一个库，多条写入要一起成功**（下单时写订单、扣库存、写流水）：放进一个 `TransactionExecuteNode` 的 `steps`，不要串几个 `InsertNode` / `UpdateNode` / `ExecuteSqlNode`，中途失败时前面写进去的收不回来。`Failure` 接失败应答或告警。
+- **影响 0 行不算失败。** 条件不满足（库存不够、状态不对）时 `UPDATE` 只是 0 行，事务照常提交。后一步要依赖前一步时，在 SQL 里接上，如 `INSERT … SELECT … FROM DUAL WHERE ROW_COUNT() > 0`；事务后再查一次结果，用 `IfNode` 决定应答。见 recipes「事务与幂等」。
+- **并发抢同一份数据**（扣库存、领券、改状态）：用带条件的更新 `UPDATE stock SET qty = qty - #{msg.body.qty} WHERE id = #{msg.body.skuId} AND qty >= #{msg.body.qty}`，再按影响行数或回查结果分支。不要先 SELECT、在 JS 里判断、再 UPDATE。
+- **跨系统，进不了一个事务**（本地库 + 支付 / 第三方接口 / 发消息）：先写一条「处理中」记录，再调外部，成功改「成功」；外部调用的 `Failure` 把状态改「失败」并告警。外部成功、本地更新失败时记待补偿并告警，不要静默丢掉。要不要自动冲正（如退款）由用户定，和其他缺口放在同一次提问里问。
+- **会被重复触发**（支付回调、Webhook 重试、定时任务重跑）：按业务唯一键（订单号、回调交易号）做幂等，配唯一索引，写入用条件判断（`NOT EXISTS`、按状态的条件更新）。处理过的直接返回成功，不重复扣款、发货、通知。
+- SQL 参数一律 `#{}` 绑定，`${}` 只用于表名这类可信标识。
+- 数据库包没有事务节点时，不要用 JS 或多个节点拼「假事务」：说明一致性风险，按「环境里没有对应节点」补节点，或请用户确认接受风险。
+- 汇报里加一行「数据一致性」：哪几步在同一事务里、幂等键、失败怎么补偿。
 
 ## 通知与失败告警
 
@@ -194,9 +260,9 @@ node $S/result.mjs deploy deploy.json
 
 `buildify --json key test`：
 
-- 退出码 0：用返回的工作区。只有一把密钥时不必加 `--profile`。
+- 退出码 0：再跑 `buildify --json config profiles`，按 `tenantId` 去重数工作区（同一个 `tenantId` 的多个 profile 算一个，用 `current` 那个，否则用列表里第一个）。只有一个工作区时不必加 `--profile`。不止一个时，`key test` 成功只说明默认（`current`）那把密钥能用，**不代表用户要用这个工作区**；新建流程按「多个工作区时新建」选，改已有流程按用户点名的流程所在的工作区：默认工作区里找不到这条流程时，并行查其他工作区的 `project list` / `workflow list` 再定，都没有才说不存在；同名流程在多个工作区都有时让用户点「工作区 / 项目 / 流程」。
 - `data.reason=missing_api_key`：**停止编排**，按 [install.md](install.md)「buildify-cli 密钥」的模板请用户到 **系统设置 → API Keys → buildify-cli 密钥** 创建并发来 `keyId.secret`，不要原样转发 `data.userMessage`。profile 名用工作区的简短英文名，没有就用 `default`。收到后 `printf '%s' "$KEY" | buildify config add-profile "$PROFILE"` 再 `key test`。
-- `data.reason=profile_required`：**停止**，每个 profile 一个选项（名称、tenantId、密钥名），点一次。之后每条命令加 `--profile <name>`。不要 `config use`，除非用户明确要改默认工作区。
+- `data.reason=profile_required`：没有默认工作区。新建流程时直接按「多个工作区时新建」出「工作区 / 项目」题，不要先单独问一轮工作区；其他场景每个 profile 一个选项（名称、tenantId、密钥名），点一次。之后每条命令加 `--profile <name>`。不要 `config use`，除非用户明确要改默认工作区。
 - `data.reason=workspace_key_missing`：请用户在 `.buildify-workspace` 指向的那个工作区创建密钥发来，不要改用别的工作区。
 - 项目 404 且响应带 `tenantId` / `profile`：先问是不是工作区错了。退出码 2 且 `msg` 含「缺少权限」：密钥有效，请用户补上消息里的 scope，不要重建密钥。
 

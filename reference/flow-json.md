@@ -141,10 +141,7 @@ MCP 自定义出口（源节点 `data.relations` 与边上都要同一份）：
   "zIndex": 0,
   "data": {
     "name": "GroupNode", "label": "group", "summary": "查询", "isLayoutNode": true,
-    "parameters": {
-      "groupLabel": "查询", "groupColor": "#4a535c", "groupOpacity": 0.03, "groupRadius": 12,
-      "groupBorderStyle": "solid", "groupBorderWidth": 1.5, "groupBorderColor": "#4a535c"
-    }
+    "parameters": { "groupLabel": "查询" }
   }
 }
 ```
@@ -152,7 +149,7 @@ MCP 自定义出口（源节点 `data.relations` 与边上都要同一份）：
 - `position` / `style` 宽高和组内子节点的相对坐标由排版脚本算（留白左右 48、上 84、下 48）。标题在框内，框的最上沿就是框 `y`。
 - 不写 `bundleName` / `bundleVersion`，**不出现在任何 `edges` 里**；边照常连组内业务节点，可以跨框。不要去 `bundle nodes` 里找 `GroupNode`。
 - 组内每个执行节点都写 `parentNode`（+ `extent: "parent"`），漏一个就漂在框外。
-- `groupLabel` / `summary` 用这个模块的短名。多组可以换 `groupColor` 的色相，透明度 `0.03`、边框宽度 `1.5` 不变。一层即可，不要嵌套分组，除非用户明确要求。
+- `groupLabel` / `summary` 用这个模块的短名。不写 `groupColor` / `groupOpacity` / `groupRadius` / `groupBorder*`，样式走系统默认；用户明确要求某种颜色或边框时才写。已有草稿里的分组样式不要改。一层即可，不要嵌套分组，除非用户明确要求。
 
 ## 校验顺序
 

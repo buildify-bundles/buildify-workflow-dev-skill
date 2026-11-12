@@ -14,7 +14,7 @@ spec 规则：
 - 节点：`key`（spec 内引用）、`bundle`（可写 `包名@版本`）、`name`、`summary`（≤8 字）、`parameters`（只写要改的键，默认值脚本补）、`credentials`、`parent`（分组 key）、`disabled`。
 - 边：`["from", "to"]` 默认出口 `Success`；`["from", "to", "Failure"]`；多个出口接同一下游写 `"Success,Failure"`；要改出口说明用对象 `{ "from", "to", "out", "description": { "Failure": "…" } }`。
 - 分组框 `{ "key", "group": "模块名" }`；批注 `{ "key", "comment": "正文", "width": 480 }`（只在用户要求时加）。
-- 不写 id、坐标、图标、label、出口对象、分组样式，脚本都会补。
+- 不写 id、坐标、图标、label、出口对象，脚本都会补。分组只写 `group` 标题，不写颜色和边框。
 
 ## 1. 定时 → 拉取 → 推送，失败告警
 
@@ -51,24 +51,35 @@ spec 规则：
 - 失败分支的渠道以用户点名为准，见 SKILL「通知与失败告警」。凭证 `name` 必须是用户从 `project credentials` 点选的，不要因为只有一条就默认写上。
 - 写入数据库的节点（如 MySQL）`SqlEditor` 字段用 `#{msg.xxx}`（值）和 `${msg.xxx}`（表名 / 列名），不要写 `{{ }}` 或 `=` 前缀，见 [expressions.md](expressions.md)。
 
-## 2. Webhook → 处理 → 应答
+## 2. Webhook → 校验 → 处理 → 应答
 
 ```json
 {
   "nodes": [
     { "key": "hook", "bundle": "buildify/core", "name": "WebhookTriggerNode", "summary": "接收请求",
-      "parameters": { "path": "/orders/:id", "methods": ["GET"],
+      "parameters": { "path": "/orders/:id", "methods": ["GET"], "responseMode": "WebhookNode",
         "options": { "cors": { "enabled": false, "allowedOrigins": "*", "allowedMethods": ["GET"] } } } },
+    { "key": "check", "bundle": "buildify/core", "name": "ValidateNode", "summary": "校验参数",
+      "parameters": { "configType": "rules", "rules": [
+        { "field": "pathParams.id", "check": "required" },
+        { "field": "pathParams.id", "check": "pattern", "pattern": "^\\d{1,20}$" }
+      ] } },
     { "key": "work", "bundle": "buildify/core", "name": "JsFunctionNode", "summary": "查询订单",
-      "parameters": { "code": "// 按路径参数组装返回\n// 入参：msg（触发器字段在根级）；出参：{ code, data }\n\n// --- 1. 返回下游 ---\nreturn { code: 200, data: msg };" } },
+      "parameters": { "code": "// 按路径参数组装返回\n// 入参：msg.pathParams.id（已校验）；出参：{ code, data }\n\n// --- 1. 返回下游 ---\nreturn { code: 200, data: { id: msg.pathParams.id } };" } },
     { "key": "reply", "bundle": "buildify/core", "name": "WebhookResponseNode", "summary": "返回结果",
-      "parameters": { "responseType": "custom", "outputType": "json", "jsonValue": "={{msg}}" } }
+      "parameters": { "responseType": "custom", "outputType": "json", "jsonValue": "={{msg}}" } },
+    { "key": "bad", "bundle": "buildify/core", "name": "WebhookResponseNode", "summary": "参数错误",
+      "parameters": { "responseType": "custom", "outputType": "json",
+        "jsonValue": { "code": 400, "msg": "参数不合法", "errors": "={{msg.output.errors}}" },
+        "options": { "responseStatusCode": 400 } } }
   ],
-  "edges": [["hook", "work"], ["work", "reply"]]
+  "edges": [["hook", "check"], ["check", "bad", "Invalid"], ["check", "work"], ["work", "reply"]]
 }
 ```
 
-- `options.cors` 是必填块，不开跨域也要写，`allowedMethods` 与 `methods` 一致。
+- 默认先校验再处理，`Invalid` 出口返回 400，不往下访问资源（见 SKILL「HTTP 接口」）。规则只写下游用到的字段；多个字段、多项约束时也可以 `configType: "json"` 写 `schema`。
+- 一个触发器只勾一个方法。同一资源还要 POST（如创建订单）时另起一段或另建一条流程，见第 5 节，不要在这里按 `msg.method` 分流。
+- 默认不开跨域，但 `options.cors` 是必填块仍要写，`allowedMethods` 与 `methods` 一致；要开时的写法见 SKILL「HTTP 接口」。
 - 认证先用触发器的 `authType`（见 SKILL「HTTP 接口」），开了认证再按凭证三选一绑对应的槽（`httpBasicAuth` / `apiKey` / `jwtAuth`）。
 - `jsonValue` 是 `JsonExpressionInput`：整字段 `"={{msg.xxx}}"` 保留类型，要拼字符串才写 `"=[{{msg.type}}] {{msg.title}}"`。改成纯文本响应（`outputType: text`，字段 `textValue`）时变量写 `{{msg.title}}`。
 - 试跑前先测访问地址，见 [http.md](http.md)。
@@ -166,3 +177,60 @@ buildify --json workflow save-draft -p "$PROJ" -w "$WF" -f flow.json
 
 - 一个模块一个框，组内每个节点写 `parent`；模块之间照常连边，可以跨框。分支跟着所在模块，不要再加框。
 - 不要顺手给每个框加说明批注，用户要求时才加（见 [comment-node.md](comment-node.md)）。
+
+## 6. 事务与幂等：下单扣库存
+
+`POST /orders`：校验 → 一个事务里扣库存并建订单 → 按订单号回查 → 应答。规则见 SKILL「数据一致性与事务」。
+
+```json
+{
+  "nodes": [
+    { "key": "hook", "bundle": "buildify/core", "name": "WebhookTriggerNode", "summary": "下单请求",
+      "parameters": { "path": "/orders", "methods": ["POST"], "responseMode": "WebhookNode",
+        "options": { "cors": { "enabled": false, "allowedOrigins": "*", "allowedMethods": ["POST"] } } } },
+    { "key": "check", "bundle": "buildify/core", "name": "ValidateNode", "summary": "校验参数",
+      "parameters": { "configType": "json", "schema": {
+        "body.orderNo": { "required": true, "type": "string", "pattern": "^[A-Za-z0-9_-]{1,32}$" },
+        "body.skuId": { "required": true, "type": "integer" },
+        "body.qty": { "required": true, "type": "integer", "min": 1, "max": 999 }
+      } } },
+    { "key": "bad", "bundle": "buildify/core", "name": "WebhookResponseNode", "summary": "参数错误",
+      "parameters": { "responseType": "custom", "outputType": "json",
+        "jsonValue": { "code": 400, "msg": "参数不合法", "errors": "={{msg.output.errors}}" },
+        "options": { "responseStatusCode": 400 } } },
+    { "key": "tx", "bundle": "buildify/mysql", "name": "TransactionExecuteNode", "summary": "扣库存建单",
+      "credentials": { "credentialsId": { "type": "MySQLCredentials", "name": "用户点选的实例名" } },
+      "parameters": { "steps": [
+        { "sql": "UPDATE stock SET qty = qty - #{msg.body.qty}\nWHERE sku_id = #{msg.body.skuId} AND qty >= #{msg.body.qty}\n  AND NOT EXISTS (SELECT 1 FROM orders WHERE order_no = #{msg.body.orderNo})" },
+        { "sql": "INSERT INTO orders (order_no, sku_id, qty, status)\nSELECT #{msg.body.orderNo}, #{msg.body.skuId}, #{msg.body.qty}, 'created' FROM DUAL\nWHERE ROW_COUNT() > 0" }
+      ] } },
+    { "key": "txFail", "bundle": "buildify/core", "name": "WebhookResponseNode", "summary": "下单失败",
+      "parameters": { "responseType": "custom", "outputType": "json",
+        "jsonValue": { "code": 500, "msg": "下单失败，请稍后重试" },
+        "options": { "responseStatusCode": 500 } } },
+    { "key": "find", "bundle": "buildify/mysql", "name": "ExecuteSqlNode", "summary": "回查订单",
+      "credentials": { "credentialsId": { "type": "MySQLCredentials", "name": "用户点选的实例名" } },
+      "parameters": { "sql": "SELECT order_no, sku_id, qty, status FROM orders WHERE order_no = #{msg.body.orderNo}" } },
+    { "key": "exists", "bundle": "buildify/core", "name": "IfNode", "summary": "订单已建",
+      "parameters": { "type": "expression", "expression": "msg.output.rowCount > 0" } },
+    { "key": "ok", "bundle": "buildify/core", "name": "WebhookResponseNode", "summary": "返回订单",
+      "parameters": { "responseType": "custom", "outputType": "json",
+        "jsonValue": { "code": 200, "data": "={{msg.output.data}}" } } },
+    { "key": "noStock", "bundle": "buildify/core", "name": "WebhookResponseNode", "summary": "库存不足",
+      "parameters": { "responseType": "custom", "outputType": "json",
+        "jsonValue": { "code": 409, "msg": "库存不足" },
+        "options": { "responseStatusCode": 409 } } }
+  ],
+  "edges": [
+    ["hook", "check"], ["check", "bad", "Invalid"], ["check", "tx"],
+    ["tx", "txFail", "Failure"], ["tx", "find"], ["find", "exists"],
+    ["exists", "ok", "True"], ["exists", "noStock", "False"]
+  ]
+}
+```
+
+- **两步在同一个事务里，任何一步 SQL 报错都整体回滚**（如 `order_no` 唯一索引冲突）。库存不够或订单号已存在时，第一步影响 0 行不算错误，第二步靠 `ROW_COUNT() > 0` 跟着不插入，数据不变。
+- **幂等**：同一订单号重复请求时第一步不再扣库存，回查能查到已有订单，直接返回 200。`orders.order_no` 要有唯一索引兜住并发重复，冲突时走 `Failure`，客户端重试会拿到已有订单。
+- 事务后的结果以回查为准，不要依赖事务节点的输出判断建单成没成。`find` 的 `Failure` 和 `exists` 的 `Failure` 按流程已有的失败处理接（这里省略）。
+- 扣库存、建单之外还要调支付等外部系统时，外部调用放在事务之后，按 SKILL「跨系统」先记状态再调用。
+- 汇报「数据一致性」一行：事务范围是扣库存和建单，幂等键 `order_no`，失败返回 500 且不改数据。

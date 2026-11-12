@@ -55,4 +55,6 @@
    ```
 
    测试地址 = `BASE` + `/@test` + 触发器 `parameters.path`，方法与触发器一致；路径参数（如 `:id`）换成示例值，请求体按需求造一条最小样例。触发器开了入站认证时，不要猜密钥、不要从凭证里取明文：请用户提供，或请他自己调测试地址，再等 `test-run` 结果。
-5. 结合 `result.mjs` 的摘要和这次 HTTP 响应判断是否符合需求，按 [report.md](report.md)「试跑后」汇报。要看某个节点的输出用 `result.mjs test-run … --node <id 或 summary> --path output.body`，不要把整份响应读进对话。
+
+   流程里有 `ValidateNode` 时，正常请求通过后再跑一次 `test-run`，这次发一条不合法的请求（缺必填字段，或路径参数换成 `abc` 这类不合规的值），确认走 `Invalid` 出口、下游业务节点没有执行。测试环境由引擎先回「消息已经接收到」，看不到 400 正文，以 `result.mjs` 里的节点路径为准。
+5. 结合 `result.mjs` 的摘要和这次 HTTP 响应判断是否符合需求，按 [report.md](report.md)「试跑后」汇报，并写一句不合法请求是否被拦下。要看某个节点的输出用 `result.mjs test-run … --node <id 或 summary> --path output.body`，不要把整份响应读进对话。
