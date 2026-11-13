@@ -67,7 +67,7 @@ description: >-
 | 命令 | 做什么 |
 |---|---|
 | `node $S/catalog.mjs fetch -b buildify/core -n A,B -b 包2 -n C [-V 版本] [--profile P]` | 并行拉 `bundle nodes` / `node-properties` / `node-relations` 存进 `/tmp/buildify-catalog`，打印摘要。没有 `-n` 只列包里的节点。`show` 只读缓存 |
-| `node $S/build.mjs spec.json -o flow.json [--base draft.json] [--fetch]` | 按 spec 生成画布：`n-` + nanoid、边 id、目录字段、表单默认值、整份出口对象、凭证、分组框（只写标题）、多段原点、顶层 `direction` / `errors`，最后调 `layout.mjs`。`--base` 只改参数时旧 id 不变；切换 `name`/包名时换新 id 并改写边。参数键、出口名、凭证槽不对时 ERROR 且不写文件 |
+| `node $S/build.mjs spec.json -o flow.json [--base draft.json] [--fetch]` | 按 spec 生成画布：`n-` + nanoid、边 id、目录字段、表单默认值、整份出口对象、凭证、分组框（只写标题）、多段原点、顶层 `direction` / `errors`，最后调 `layout.mjs`。`--base` 类型不变时旧 id 不变（写了相同 `name` 也一样）；`remove` 后再建同类型是 ERROR。切换 `name`/包名时换新 id 并改写边。参数键、出口名、凭证槽不对时 ERROR 且不写文件 |
 | `node $S/layout.mjs flow.json [--direction TB\|LR] [--group 分组id] [--check]` | 单独重排（build 已自动跑） |
 | `node $S/check.mjs flow.json --catalog-dir /tmp/buildify-catalog --fetch [--fix]` | 查边、出口、图标；按画布 `bundleVersion` 自动取版本一致的缓存，缺的再拉 |
 | `node $S/result.mjs validate\|test-run\|deploy 文件 [--flow flow.json]` | 整理 CLI 输出；`--write-errors` 写回顶层 `errors`；`--node` / `--path` 看某个节点的输出 |
@@ -99,7 +99,8 @@ build 报的 WARNING 都要看：必填没填（含 Collection / Fixed 里的必
 - **默认不加批注，也不写接口文档。** 接口的方法、路径、访问地址写在对话汇报里。用户明确要求「写接口文档 / 加说明 / 加批注」时才在 spec 里加 `comment`，正文写法见 comment-node.md。
 - **默认不分组，特别复杂的流程按功能模块分组。** 执行节点大约 15 个以上，或一段里能清楚分出几块职责（如「接收校验」「下单扣款」「通知告警」）时，一个模块一个 `group`，组内节点写 `parent`。成功/失败分支跟着所在模块，不要为分支单独加框，也不要每个节点一个框。用户明确要求时照做，明确不要时不分。只改参数、不改结构时，不要为了补分组去重排已有画布。分组框只写标题，不设边框和背景色，走系统默认样式；用户明确要求时才写。
 - **方向**：`direction` 默认 `TB`；用户要横排才 `LR`；改已有沿用草稿。
-- **切换节点类型**：改已有时若换 `name` 或包名（`bundle`），spec 仍写旧节点 `id`，build 会分配**新的** `n-` id 并改写边，避开运行时按 id 缓存的旧节点；参数按新类型表单重建，不要写 `remove`。只改参数 / summary / 凭证时保持旧 id。
+- **替换已有流程也用 `--base`，类型不变就沿用旧 id。** 先 `get-draft`。能对上草稿里某一颗、且 `name` 和包名都没变的，spec 写它的旧 `id`（可以同时写相同的 `name` / `bundle`），改参数、summary、凭证或连线都可以，build 不换 id。不要用一份不带旧 id 的完整 spec 覆盖草稿，也不要 `remove` 再新建来换掉还在的节点：`--base` 下 `remove` 一颗执行节点、又用新 key 建同类型，build 报 ERROR 且不写文件。删掉一颗、同时新增另一颗同类型，也是 ERROR，分成两次 spec。
+- **切换节点类型**：改已有时若换 `name` 或包名（`bundle`），spec 仍写旧节点 `id`，不要写 `remove`。build 会分配**新的** `n-` id 并改写边，避开运行时按 id 缓存的旧节点；参数按新类型表单重建。
 
 改已有草稿时 build 会整图重排。只在增删了节点 / 边、或用户要求重排时用 build / layout，并告诉用户整张画布会按自动排列重排；用户手动调过布局时先问。只改参数就加 `--no-layout`。改动只在某个分组里时用 `layout.mjs --group <分组 id>`，组外坐标不动。
 

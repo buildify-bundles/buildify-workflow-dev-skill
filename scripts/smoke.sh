@@ -66,7 +66,7 @@ else
   echo "FAIL errors 汇总不对"; failures=$((failures + 1))
 fi
 
-# --base：只改参数保留 id；切换类型换新 id；出口对不上失败
+# --base：只改参数保留 id；同类型写了 name 也保留 id；remove 后新建同类型失败；切换类型换新 id；出口对不上失败
 HTTP_ID="$(node -e "const f=require('$OUT/flow.json');console.log(f.nodes.find(n=>n.data?.summary==='拉取预报').id)")"
 cp "$OUT/flow.json" "$OUT/base.json"
 cat >"$OUT/patch.json" <<EOF
@@ -84,6 +84,39 @@ if(!node.data.parameters.url) process.exit(1);
   echo "ok   只改参数时 id 不变、参数合并"
 else
   echo "FAIL 只改参数时 id 不变、参数合并"; failures=$((failures + 1))
+fi
+
+cat >"$OUT/same-type.json" <<EOF
+{"nodes":[{"id":"$HTTP_ID","bundle":"buildify/core","name":"HttpRequestNode","summary":"拉取预报","parameters":{"timeout":30}}]}
+EOF
+expect 0 "build --base 同类型写了 name" node "$HERE/build.mjs" "$OUT/same-type.json" --base "$OUT/base.json" -o "$OUT/same-type-out.json" --dir "$FIX/catalog" --no-layout
+if node -e "
+const flow=require('$OUT/same-type-out.json');
+const node=flow.nodes.find(n=>n.id==='$HTTP_ID');
+if(!node) process.exit(1);
+if(node.data.name!=='HttpRequestNode') process.exit(1);
+if(node.data.parameters.timeout!==30) process.exit(1);
+if(!node.data.parameters.url) process.exit(1);
+if(flow.nodes.filter(n=>n.data?.name==='HttpRequestNode').length!==1) process.exit(1);
+"; then
+  echo "ok   同类型写了 name 时 id 不变、参数合并"
+else
+  echo "FAIL 同类型写了 name 时 id 不变、参数合并"; failures=$((failures + 1))
+fi
+
+cat >"$OUT/recreate.json" <<EOF
+{"nodes":[{"key":"http2","bundle":"buildify/core","name":"HttpRequestNode","summary":"再拉一次","parameters":{"url":"https://example.com"}}],"remove":["$HTTP_ID"]}
+EOF
+expect 1 "build --base remove 后新建同类型" node "$HERE/build.mjs" "$OUT/recreate.json" --base "$OUT/base.json" -o "$OUT/recreate-out.json" --dir "$FIX/catalog" --no-layout
+if [ -e "$OUT/recreate-out.json" ]; then
+  echo "FAIL remove 后新建同类型时不应写文件"
+  failures=$((failures + 1))
+elif ! grep -q "类型没变" "$OUT/last.log" || ! grep -q "$HTTP_ID" "$OUT/last.log"; then
+  echo "FAIL remove 后新建同类型的报错没点出旧 id"
+  sed 's/^/     /' "$OUT/last.log"
+  failures=$((failures + 1))
+else
+  echo "ok   remove 后新建同类型不写文件"
 fi
 
 cat >"$OUT/switch.json" <<EOF

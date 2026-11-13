@@ -32,6 +32,8 @@
  *
  * --base 在已有画布上改：
  *   - 只改参数 / summary / credentials：`{ "id": "n-旧id", "parameters": {…} }`（不写 name，或 name+bundle 与画布相同）→ 旧 id 不变，parameters 按键合并。
+ *   - 类型不变却 remove 后再用新 key 建同类型节点：ERROR，不写文件。把旧 id 写到节点上原地改。
+ *     删掉一颗又在同一次 spec 里新建另一颗同类型，同样 ERROR，分成两次。
  *   - 切换节点类型：`{ "id": "n-旧id", "bundle": "…", "name": "新类型", "parameters": {…} }`（name 或包名与画布不同）→
  *     分配新的 n- id，按新类型表单重建 data（不合并旧参数），边的 source/target 与边 id 跟着改；旧 id 本张画布不再用，避开按 id 缓存的旧节点。
  *     切换后出边里新类型没有的出口会删掉；某条边一个出口都不剩就 ERROR。切换不要写 remove（remove 是删了重加，边不会自动接上）。
@@ -506,6 +508,7 @@ async function main() {
   const report = createReport()
 
   const removed = new Set()
+  const removedExec = []
   for (const ref of spec.remove ?? []) {
     if (!base) {
       report.error('remove', 'remove 只在 --base 时用')
@@ -520,6 +523,10 @@ async function main() {
     if (flow.edges.length === before) report.error('remove', `${ref} 既不是已有节点 id，也不是已有边 id`)
   }
   if (removed.size) {
+    for (const node of flow.nodes) {
+      if (!removed.has(node.id) || !node.data?.name || !node.data?.bundleName) continue
+      removedExec.push({ id: node.id, name: node.data.name, bundleName: node.data.bundleName })
+    }
     const orphans = flow.nodes.filter(node => removed.has(node.parentNode)).map(node => node.id)
     if (orphans.length) report.error('remove', `删掉的分组框里还有节点 ${orphans.join(', ')}，先把它们一起删掉或改 parent`)
     flow.nodes = flow.nodes.filter(node => !removed.has(node.id))
@@ -612,6 +619,13 @@ async function main() {
     if (item.group !== undefined) node = groupNode(item, id)
     else if (item.comment !== undefined) node = commentNode(item, id)
     else if (item.name) {
+      const { bundleName } = splitBundle(item.bundle)
+      const same = removedExec.filter(entry => entry.name === item.name && entry.bundleName === bundleName)
+      if (same.length) {
+        report.error(`节点 ${item.key}`,
+          `类型没变（${bundleName} ${item.name}），不要 remove ${same.map(entry => entry.id).join('、')} 后再新建。把旧 id 写到这个节点上`)
+        continue
+      }
       const data = buildExecData(item, lookup, report, args.defaults)
       if (!data) continue
       node = { id, type: 'default', position: { x: 0, y: 0 }, data }
