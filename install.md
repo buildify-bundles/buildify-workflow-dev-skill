@@ -31,7 +31,7 @@ description: >-
 
 **范围**：用户说了「当前仓库 / 项目级 / 团队共享」才装到仓库里，否则一律**全局**。
 
-**已经装过**：先在下表所有目录（全局和当前仓库）里找 `buildify-workflow-dev/SKILL.md`。找到就**原地更新那一份**，不要再装一份新的。
+**已经装过**：先在下表所有目录（全局和当前仓库）里找 `buildify-workflow-dev/SKILL.md`。找到就**原地更新那一份**，不要再装一份新的。更新前记下旧版本：读那一份里的 `version.json` 的 `version`，没有这个文件就记为「未知」。
 
 `DEST` = 下表目录 + `buildify-workflow-dev`。Windows 把 `~` 换成 `%USERPROFILE%`。
 
@@ -89,11 +89,11 @@ mkdir -p "$DEST" && curl -fsSL --max-time 60 \
 
 ```bash
 BASE=https://gitee.com/buildify/buildify-workflow-dev-skill/raw/main
-for f in SKILL.md README.md install.md reference/cli.md reference/flow-json.md reference/expressions.md \
+for f in SKILL.md README.md install.md version.json reference/cli.md reference/flow-json.md reference/expressions.md \
          reference/recipes.md reference/comment-node.md reference/report.md reference/missing-bundle.md \
          reference/layout-manual.md reference/credentials.md reference/http.md \
          scripts/layout.mjs scripts/check.mjs scripts/catalog.mjs scripts/build.mjs scripts/result.mjs \
-         scripts/lib/catalog-store.mjs scripts/vendor/dagre.min.js scripts/vendor/dagre.LICENSE; do
+         scripts/update-check.mjs scripts/lib/catalog-store.mjs scripts/vendor/dagre.min.js scripts/vendor/dagre.LICENSE; do
   mkdir -p "$DEST/$(dirname "$f")" && curl -fsSL --max-time 60 "$BASE/$f" -o "$DEST/$f" || echo "下载失败 $f"
 done
 ```
@@ -104,11 +104,11 @@ done
 
 ```bash
 grep -E '^name: buildify-workflow-dev$' "$DEST/SKILL.md"
-for f in reference/cli.md reference/flow-json.md reference/expressions.md reference/recipes.md \
+for f in version.json reference/cli.md reference/flow-json.md reference/expressions.md reference/recipes.md \
          reference/comment-node.md reference/report.md reference/missing-bundle.md \
          reference/layout-manual.md reference/credentials.md reference/http.md \
          scripts/layout.mjs scripts/check.mjs scripts/catalog.mjs scripts/build.mjs scripts/result.mjs \
-         scripts/lib/catalog-store.mjs scripts/vendor/dagre.min.js; do test -f "$DEST/$f" || echo "缺少 $f"; done
+         scripts/update-check.mjs scripts/lib/catalog-store.mjs scripts/vendor/dagre.min.js; do test -f "$DEST/$f" || echo "缺少 $f"; done
 ```
 
 有缺失就换另一个来源重取一次；还缺就把路径和 `ls` 结果告诉用户，不要假装成功。
@@ -174,6 +174,7 @@ buildify --json key test
 | 项 | 内容 |
 | --- | --- |
 | 安装位置 | `/Users/me/.cursor/skills/buildify-workflow-dev`（新装 / 已更新 / 旧副本已备份到 …） |
+| Skill 版本 | `1.0.0`（新装 / 从 0.9.0 更新 / 已是最新），取自 `version.json`；有更新时附上 `notes` 要点 |
 | 来源 | GitHub git / Gitee git / GitHub 压缩包 / Gitee 逐个文件 |
 | buildify CLI | 已安装（uv tool）/ 已是最新 / 失败：原因 |
 | buildify-cli 密钥 | 可用（工作区名）/ 待配置：系统设置 → API Keys → buildify-cli 密钥 |

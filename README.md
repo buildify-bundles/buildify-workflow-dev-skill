@@ -63,6 +63,7 @@ git -c protocol.version=1 clone https://gitee.com/buildify/buildify-workflow-dev
 | `scripts/check.mjs` | 保存前检查：一对节点一条边、边 `id`、出口数组与 `name` / `label`、节点图标对照目录。`node scripts/check.mjs flow.json --catalog-dir /tmp/buildify-catalog --fetch [--fix]` |
 | `scripts/result.mjs` | 整理 validate / test-run / deploy 的输出，写回顶层 `errors`。`node scripts/result.mjs validate validate.json --flow flow.json --write-errors` |
 | `scripts/lib/catalog-store.mjs` | 目录缓存的读写与摘要，上面几个脚本共用 |
+| `version.json`、`scripts/update-check.mjs` | 版本号与更新检查：对比本地和仓库 `main` 上的 `version.json`，有新版本时 Agent 提示一句。`node scripts/update-check.mjs [--force]` |
 | `scripts/smoke.sh`、`scripts/fixtures/` | 离线冒烟测试：`bash scripts/smoke.sh`（改脚本后跑） |
 | `scripts/vendor/` | 内置的 `@dagrejs/dagre` 1.1.4（MIT，见 `dagre.LICENSE`），脚本不用 `npm install` |
 
@@ -78,6 +79,19 @@ buildify --json key test
 ```
 
 多个工作区时用 `buildify --json config profiles` 看已存名称，之后的命令加 `--profile <名称>`。
+
+## 更新
+
+Agent 每次开始编排时跑 `scripts/update-check.mjs`：先读 GitHub raw 上的 `version.json`，失败再读 Gitee，每个 3 秒超时，结果缓存 24 小时（`~/.cache/buildify/workflow-dev-update.json`）。有新版本时开头提示一句并照常编排；本地低于 `minVersion` 时先停下请你确认更新。说「更新 skill」，Agent 就在原目录 `git pull --ff-only`（不是 git 副本就备份后重装）。网络不通时不提示，也不影响编排；设置 `BUILDIFY_SKILL_NO_UPDATE_CHECK=1` 可关闭检查。
+
+### 发布新版本（维护者）
+
+1. 改 `version.json`：`version` 按 semver 递增；`notes` 写 1–3 条用户能看懂的要点（会原样展示）；`date` 写当天。
+2. 只有旧版本会把事情做错时（CLI 参数变了、画布格式变了、旧规则会生成错误流程）才把 `minVersion` 提到新版本，平时不动。
+3. 跑 `bash scripts/smoke.sh`，提交，打 tag：`git tag vX.Y.Z`。
+4. 推到 GitHub 和 Gitee：`git push origin main --tags`，Gitee 没有自动同步时再推一次 Gitee 远端。
+
+raw.githubusercontent 有约 5 分钟 CDN 缓存，加上本地 24 小时缓存，用户最晚约一天内看到提示。
 
 ## 排版脚本与控制台同步
 

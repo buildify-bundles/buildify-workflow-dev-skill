@@ -12,7 +12,7 @@ description: >-
   横排, 竖排, 多段, 独立接口, 入站认证, 访问地址, 飞书卡片, 失败告警, 缺少节点,
   验签, 回调, 微信支付, 支付宝, Stripe, 部署记录, 历史版本, 绑定服务器, 换服务器,
   删除流程, 改名, 改凭证, 删除凭证, 凭证被哪些流程使用, 切换项目, 换项目,
-  建到哪个项目, 换到别的项目, 工作区, 切换工作区, 多个工作区.
+  建到哪个项目, 换到别的项目, 工作区, 切换工作区, 多个工作区, 更新 skill, skill 版本.
 ---
 
 # Buildify 流程编排
@@ -29,7 +29,7 @@ description: >-
 
 ```
 流程编排进度：
-- [ ] 1. CLI 就绪：buildify --json key test，再 config profiles 看有几个工作区（见「工作区与密钥」）
+- [ ] 1. CLI 就绪：buildify --json key test，再 config profiles 看有几个工作区（见「工作区与密钥」）；同时 node $S/update-check.mjs（见「Skill 版本」）
 - [ ] 2. 定工作区和项目（新建每次点选确认）、流程（见「沿用已有，只问缺的」「项目：新建必选，切换重选」）
 - [ ] 3. 定服务器：改已有先 workflow workers（只要 deleteStatus 0）；画布默认 TB，试跑通过后默认发布
 - [ ] 4. 发现节点：bundle list -k → node $S/catalog.mjs fetch -b 包 -n 节点,节点 …（一次拉齐要用的节点）；缺包或缺节点 → 见「环境里没有对应节点」
@@ -71,6 +71,7 @@ description: >-
 | `node $S/layout.mjs flow.json [--direction TB\|LR] [--group 分组id] [--check]` | 单独重排（build 已自动跑） |
 | `node $S/check.mjs flow.json --catalog-dir /tmp/buildify-catalog --fetch [--fix]` | 查边、出口、图标；按画布 `bundleVersion` 自动取版本一致的缓存，缺的再拉 |
 | `node $S/result.mjs validate\|test-run\|deploy 文件 [--flow flow.json]` | 整理 CLI 输出；`--write-errors` 写回顶层 `errors`；`--node` / `--path` 看某个节点的输出 |
+| `node $S/update-check.mjs [--force]` | 本 skill 有没有新版本，输出一行 JSON，24 小时内复用缓存；退出码总是 0 |
 
 退出码统一：0 通过；1 有 ERROR / 没通过（按输出修）；3 文件、参数或拉取失败。多工作区时 `catalog.mjs` / `build.mjs --fetch` / `check.mjs --fetch` 都加 `--profile`，缓存目录也按工作区分开：`catalog.mjs` / `build.mjs` 加 `--dir /tmp/buildify-catalog/<profile>`，`check.mjs` 的 `--catalog-dir` 用同一个目录。缓存只按「包@版本」存，不分开会串用别的工作区的同名包。
 
@@ -267,3 +268,17 @@ node $S/result.mjs deploy deploy.json
 - 项目 404 且响应带 `tenantId` / `profile`：先问是不是工作区错了。退出码 2 且 `msg` 含「缺少权限」：密钥有效，请用户补上消息里的 scope，不要重建密钥。
 
 **密钥安全：** 不要 `--api-key`；不要写进仓库、`.env` 或 commit；不要在回复里回显明文。本 CLI 不能创建密钥。
+
+## Skill 版本（步骤 1）
+
+`node $S/update-check.mjs` 和 `key test` 一起跑，按输出的 JSON 处理，同一次对话只提示一次：
+
+- `updateAvailable` 为 true、`required` 为 false：在第一条回复开头说一句，然后照常编排，不要停下等回答：
+
+  > buildify-workflow-dev 有新版本 {latest}（当前 {current}）：{notes 用「；」连起来}。说「更新 skill」我来更新。
+
+  这次的汇报表最后加一行「Skill 版本」：`{current}，可更新到 {latest}`。
+- `required` 为 true：当前版本太旧，按它编排可能出错。**停止编排**，说明当前版本、最新版本和要点，请用户确认更新；确认后更新再继续，用户坚持不更新就照常编排，汇报里写明版本过旧。
+- `checked` 为 `failed` / `skipped`、已是最新，或本机没有 Node：什么都不说。
+
+**用户说「更新 skill」时：** 对输出里的 `skillDir` 按 [install.md](install.md)「取文件」原地更新（git 仓库 `pull --ff-only`；不是 git 仓库或 pull 失败就先备份再重装），再跑一次 `node $S/update-check.mjs --force` 确认 `updateAvailable` 为 false。用表格汇报旧版本、新版本和要点，并提醒：新版说明要在**新开的对话**里才生效。当前对话里是否接着编排，由用户决定。不要顺手装别的客户端，也不要改用户的 git 配置。

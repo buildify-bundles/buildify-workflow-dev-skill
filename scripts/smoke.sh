@@ -134,4 +134,16 @@ else
   echo "ok   出口对不上时不写文件"
 fi
 
+check_update() {
+  local name="$1" fixture="$2" want="$3"
+  local got
+  got="$(node "$HERE/update-check.mjs" --url "file://$FIX/$fixture" | node -e "
+const r=JSON.parse(require('node:fs').readFileSync(0,'utf8'));
+console.log([r.checked,r.updateAvailable,r.required,r.notes.length>0].join(','))")"
+  if [ "$got" = "$want" ]; then echo "ok   $name"; else echo "FAIL $name（$got，期望 $want）"; failures=$((failures + 1)); fi
+}
+check_update "update-check 有新版本" version-newer.json "url,true,false,true"
+check_update "update-check 低于 minVersion" version-required.json "url,true,true,true"
+check_update "update-check 取不到不报错" missing.json "failed,false,false,false"
+
 if [ "$failures" -eq 0 ]; then echo "smoke: 全部通过"; else echo "smoke: $failures 项失败"; exit 1; fi
