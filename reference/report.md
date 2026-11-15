@@ -90,7 +90,7 @@
 
 ## 状态映射
 
-按 `deployStatus` / `isOnline`（或 `deployStatusLabel` / `onlineLabel`）映射，**不要**把响应里的 `deployStatusIcon` / `onlineIcon` 原样贴进表格。
+按 `deployStatus` / `isOnline` 枚举映射（CLI 1.3.0 起响应里不再带图标和中文标签）。`deployStatus` 取值：`success` 成功、`success_with_warnings` 有警告、`failed` 失败、`timeout` 超时、`running` 部署中、`pending` 待部署、`canceled` 已取消。`result.mjs deploy` 已按下表换好。
 
 | 含义 | 标题 | 表格单元格 |
 | --- | --- | --- |
@@ -116,7 +116,7 @@
 
 用户问部署记录或历史版本时才出这些表。状态符号用上面的映射，单元格仍不放彩色 emoji。不写 `deploymentId` / `versionId`，除非用户要排障或要打开某一版。来源只在返回里有 `source` 时写。
 
-部署记录（`workflow deployments` 的 `data.data`）：
+部署记录（`workflow deployments` 的 `data`，总数在信封顶层 `total`）：
 
 ```markdown
 ## 部署记录

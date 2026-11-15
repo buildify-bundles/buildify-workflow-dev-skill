@@ -5,17 +5,17 @@
  *   node scripts/check.mjs flow.json [--catalog-dir DIR] [--fetch [--profile NAME]] [--catalog FILE ...] [--fix] [-o out.json]
  *
  * 目录来源（可同时用）：
- *   --catalog-dir DIR catalog.mjs / build.mjs 的缓存目录。每个包只取和画布 bundleVersion 一致的那份；
- *                     画布上同一个包用了两个版本时不取，交给 --fetch
- *   --fetch           按画布里用到的 bundle 调 `buildify --json bundle nodes` / `bundle node-relations`，已有目录的跳过
+ *   --catalog-dir DIR catalog.mjs / build.mjs 的缓存目录，不写时和它们的默认一致（见 catalog.mjs 文件头，按 --profile 分子目录）。
+ *                     每个包只取和画布 bundleVersion 一致的那份；画布上同一个包用了两个版本时不取，交给 --fetch
+ *   --fetch           缓存里缺的目录和出口按 catalog.mjs fetch 的规则拉进同一个缓存目录（bundle nodes + 一次 bundle schema），下次直接复用
  *   --catalog FILE    读已保存的上述两条命令的 --json 输出
  * 没有目录时只做结构、格式和一致性检查，图标是否用对、出口名是否存在要靠目录才能判断。
  *
  * 退出码：0 没有 ERROR（可能有 WARNING）；1 还有 ERROR；3 文件、参数或拉目录失败。
  */
-import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
-import { catalogFile } from './lib/catalog-store.mjs'
+import { CatalogError, catalogDir, catalogFile, fetchBundle, loadNodes } from './lib/catalog-store.mjs'
+import { printHelp } from './lib/help.mjs'
 
 const DECORATION_TYPES = new Set(['text', 'comment', 'notes'])
 const ICON_FILE = /^[A-Za-z0-9][A-Za-z0-9._-]*\.(svg|png|jpe?g|gif|webp)$/i
@@ -37,10 +37,8 @@ function parseArgs(argv) {
     else if (arg === '--profile') args.profile = argv[++i]
     else if (arg === '--catalog') args.catalogs.push(argv[++i])
     else if (arg === '-o' || arg === '--out') args.out = argv[++i]
-    else if (arg === '-h' || arg === '--help') {
-      process.stdout.write(USAGE)
-      process.exit(0)
-    } else if (!args.file) args.file = arg
+    else if (arg === '-h' || arg === '--help') printHelp(import.meta.url)
+    else if (!args.file) args.file = arg
     else fail(`多余的参数: ${arg}`)
   }
   if (!args.file) fail(`缺少 flow.json 路径。${USAGE}`)
@@ -48,6 +46,7 @@ function parseArgs(argv) {
   if (args.catalogDir === '') fail('--catalog-dir 后面要跟目录')
   if (args.profile === undefined) fail('--profile 后面要跟配置档名称')
   if (args.out && !args.fix) fail('-o 只和 --fix 一起用')
+  args.catalogDir = catalogDir(args.catalogDir, args.profile)
   return args
 }
 
@@ -105,28 +104,6 @@ function addToCatalog(catalog, payload, source) {
   fail(`${source} 不是 bundle nodes / bundle node-relations 的输出`)
 }
 
-function runCli(cliArgs, profile) {
-  const argv = ['--json', ...(profile ? ['--profile', profile] : []), ...cliArgs]
-  let stdout
-  try {
-    stdout = execFileSync('buildify', argv, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
-  } catch (error) {
-    stdout = error.stdout
-    if (!stdout) fail(`buildify ${argv.join(' ')} 执行失败: ${error.message}`)
-  }
-  let payload
-  try {
-    payload = JSON.parse(stdout)
-  } catch {
-    fail(`buildify ${argv.join(' ')} 输出不是 JSON`)
-  }
-  if (payload?.ok === false) {
-    const reason = payload.data?.reason ? `（${payload.data.reason}）` : ''
-    fail(`buildify ${argv.join(' ')} 失败${reason}: ${payload.msg ?? ''}`)
-  }
-  return payload
-}
-
 /** 从缓存目录取版本和画布一致的目录文件，返回文件列表。 */
 function catalogFilesFromDir(dir, execNodes, edges) {
   const versions = new Map()
@@ -159,27 +136,38 @@ function catalogFilesFromDir(dir, execNodes, edges) {
   return files
 }
 
-function fetchCatalog(catalog, execNodes, edges, profile) {
+/** 缓存里缺的目录和出口用 catalog-store 的 fetchBundle 拉进同一个缓存目录（下次 check / build 直接复用），再收进 catalog。 */
+async function fetchCatalog(catalog, execNodes, edges, dir, profile) {
   const versions = new Map()
   for (const node of execNodes) {
     const { bundleName, bundleVersion } = node.data ?? {}
-    if (bundleName && !versions.has(bundleName)) versions.set(bundleName, bundleVersion)
-  }
-  for (const [bundleName, version] of versions) {
-    if (catalog.bundles.has(bundleName)) continue
-    const cliArgs = ['bundle', 'nodes', '-b', bundleName, ...(version ? ['-V', String(version)] : [])]
-    addToCatalog(catalog, runCli(cliArgs, profile), `bundle nodes -b ${bundleName}`)
+    if (bundleName && !versions.has(bundleName)) versions.set(bundleName, bundleVersion == null ? null : String(bundleVersion))
   }
   const byId = new Map(execNodes.map(node => [node.id, node]))
-  const sources = new Set()
+  const sources = new Map()
   for (const edge of edges) {
     const data = byId.get(edge?.source)?.data
-    if (data?.bundleName && data?.name) sources.add(nodeKey(data.bundleName, data.name))
+    if (!data?.bundleName || !data?.name || catalog.relations.has(nodeKey(data.bundleName, data.name))) continue
+    if (!sources.has(data.bundleName)) sources.set(data.bundleName, new Set())
+    sources.get(data.bundleName).add(data.name)
   }
-  for (const key of sources) {
-    if (catalog.relations.has(key)) continue
-    const [bundleName, name] = key.split('\0')
-    addToCatalog(catalog, runCli(['bundle', 'node-relations', '-b', bundleName, '-n', name], profile), `bundle node-relations -n ${name}`)
+  for (const [bundleName, version] of versions) {
+    const wanted = [...(sources.get(bundleName) ?? [])]
+    if (catalog.bundles.has(bundleName) && !wanted.length) continue
+    try {
+      const resolved = await fetchBundle({ dir, bundleName, version, profile })
+      const known = loadNodes(dir, bundleName, resolved) ?? new Map()
+      const names = wanted.filter(name => known.has(name))
+      if (names.length) await fetchBundle({ dir, bundleName, version: resolved, nodes: names, profile })
+      if (!catalog.bundles.has(bundleName)) {
+        addToCatalog(catalog, readJson(catalogFile(dir, bundleName, resolved), '目录'), `bundle nodes -b ${bundleName}`)
+      }
+      for (const name of names) {
+        addToCatalog(catalog, readJson(catalogFile(dir, bundleName, resolved, name, 'relations'), '出口'), `出口 ${bundleName} ${name}`)
+      }
+    } catch (error) {
+      fail(error instanceof CatalogError ? error.message : error.stack)
+    }
   }
 }
 
@@ -369,7 +357,7 @@ function checkNodes(execNodes, catalog, report, fix) {
 // 命令行
 // ---------------------------------------------------------------------------
 
-function main() {
+async function main() {
   const args = parseArgs(process.argv.slice(2))
   const flow = readJson(args.file, '画布')
   if (!flow || !Array.isArray(flow.nodes)) fail('顶层缺少 nodes 数组（要传画布 JSON，而不是整个草稿响应）')
@@ -378,9 +366,9 @@ function main() {
   const execNodes = flow.nodes.filter(isExecNode)
   const catalog = createCatalog()
   const edgeList = Array.isArray(flow.edges) ? flow.edges : []
-  const dirFiles = args.catalogDir ? catalogFilesFromDir(args.catalogDir, execNodes, edgeList) : []
+  const dirFiles = existsSync(args.catalogDir) ? catalogFilesFromDir(args.catalogDir, execNodes, edgeList) : []
   for (const file of [...dirFiles, ...args.catalogs]) addToCatalog(catalog, readJson(file, '目录'), file)
-  if (args.fetch) fetchCatalog(catalog, execNodes, Array.isArray(flow.edges) ? flow.edges : [], args.profile)
+  if (args.fetch) await fetchCatalog(catalog, execNodes, edgeList, args.catalogDir, args.profile)
 
   const report = createReport()
   checkEdges(flow, byId, catalog, report, args.fix)
@@ -404,4 +392,4 @@ function main() {
   process.exit(errors ? 1 : 0)
 }
 
-main()
+main().catch(error => fail(error.stack))

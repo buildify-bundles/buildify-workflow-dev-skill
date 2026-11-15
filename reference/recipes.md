@@ -1,12 +1,13 @@
 # 编排骨架（spec）
 
-下面是 `scripts/build.mjs` 的 spec 示例。**节点 `bundle` / `name`、参数键和出口名必须是当前环境 `catalog.mjs fetch` 实际返回的**，build 会对照目录核对，对不上就报 ERROR。环境里根本没有能覆盖需求的包时，不要用骨架硬编，按 [missing-bundle.md](missing-bundle.md) 处理。
+下面是 `scripts/build.mjs` 的 spec 示例，完整格式跑 `node $S/build.mjs --help`（不要读脚本源码）。**节点 `bundle` / `name`、参数键和出口名必须是当前环境 `catalog.mjs fetch` 实际返回的**，build 会对照目录核对，对不上就报 ERROR。环境里根本没有能覆盖需求的包时，不要用骨架硬编，按 [missing-bundle.md](missing-bundle.md) 处理。
 
 ```bash
 S=<skill 目录>/scripts
+node $S/catalog.mjs find 钉钉,dingtalk                       # 不确定包名时
 node $S/catalog.mjs fetch -b buildify/core -n SchedulerNode,HttpRequestNode,JsFunctionNode -b buildify/dingtalk-bot -n SendMarkdownMsgNode
 node $S/build.mjs spec.json -o flow.json
-node $S/check.mjs flow.json --catalog-dir /tmp/buildify-catalog --fetch
+node $S/ship.mjs flow.json -p "$PROJ" --create "流程名" --worker "$WKR"   # check + validate + 新建 + 保存
 ```
 
 spec 规则：
@@ -48,41 +49,34 @@ spec 规则：
 ```
 
 - HTTP 节点的结果在 `msg.output`（`statusCode` / `headers` / `body`）。JS 节点的返回值就是下游的整个 `msg`，所以钉钉节点写 `={{msg.title}}`。
-- 失败分支的渠道以用户点名为准，见 SKILL「通知与失败告警」。凭证 `name` 必须是用户从 `project credentials` 点选的，不要因为只有一条就默认写上。
+- 失败分支的渠道以用户点名为准，见 [alerts.md](alerts.md)。凭证 `name` 必须是用户从 `project credentials` 点选的，不要因为只有一条就默认写上。
 - 写入数据库的节点（如 MySQL）`SqlEditor` 字段用 `#{msg.xxx}`（值）和 `${msg.xxx}`（表名 / 列名），不要写 `{{ }}` 或 `=` 前缀，见 [expressions.md](expressions.md)。
 
-## 2. Webhook → 校验 → 处理 → 应答
+## 2. HTTP 接口：校验 → 处理 → 应答（http 宏）
 
 ```json
 {
   "nodes": [
-    { "key": "hook", "bundle": "buildify/core", "name": "WebhookTriggerNode", "summary": "接收请求",
-      "parameters": { "path": "/orders/:id", "methods": ["GET"], "responseMode": "WebhookNode",
-        "options": { "cors": { "enabled": false, "allowedOrigins": "*", "allowedMethods": ["GET"] } } } },
-    { "key": "check", "bundle": "buildify/core", "name": "ValidateNode", "summary": "校验参数",
-      "parameters": { "configType": "rules", "rules": [
-        { "field": "pathParams.id", "check": "required" },
-        { "field": "pathParams.id", "check": "pattern", "pattern": "^\\d{1,20}$" }
-      ] } },
-    { "key": "work", "bundle": "buildify/core", "name": "JsFunctionNode", "summary": "查询订单",
-      "parameters": { "code": "// 按路径参数组装返回\n// 入参：msg.pathParams.id（已校验）；出参：{ code, data }\n\n// --- 1. 返回下游 ---\nreturn { code: 200, data: { id: msg.pathParams.id } };" } },
+    { "key": "api", "http": { "method": "GET", "path": "/orders/:id",
+      "validate": ["pathParams.id", ["pathParams.id", "pattern", "^\\d{1,20}$"]] } },
+    { "key": "find", "bundle": "buildify/mysql", "name": "ExecuteSqlNode", "summary": "查询订单",
+      "credentials": { "credentialsId": { "type": "MySQLCredentials", "name": "用户点选的实例名" } },
+      "parameters": { "sql": "SELECT order_no, status FROM orders WHERE id = #{msg.pathParams.id}" } },
     { "key": "reply", "bundle": "buildify/core", "name": "WebhookResponseNode", "summary": "返回结果",
-      "parameters": { "responseType": "custom", "outputType": "json", "jsonValue": "={{msg}}" } },
-    { "key": "bad", "bundle": "buildify/core", "name": "WebhookResponseNode", "summary": "参数错误",
       "parameters": { "responseType": "custom", "outputType": "json",
-        "jsonValue": { "code": 400, "msg": "参数不合法", "errors": "={{msg.output.errors}}" },
-        "options": { "responseStatusCode": 400 } } }
+        "jsonValue": { "code": 200, "data": "={{msg.output.data}}" } } }
   ],
-  "edges": [["hook", "check"], ["check", "bad", "Invalid"], ["check", "work"], ["work", "reply"]]
+  "edges": [["api", "find"], ["find", "reply"]]
 }
 ```
 
-- 默认先校验再处理，`Invalid` 出口返回 400，不往下访问资源（见 SKILL「HTTP 接口」）。规则只写下游用到的字段；多个字段、多项约束时也可以 `configType: "json"` 写 `schema`。
-- 一个触发器只勾一个方法。同一资源还要 POST（如创建订单）时另起一段或另建一条流程，见第 5 节，不要在这里按 `msg.method` 分流。
-- 默认不开跨域，但 `options.cors` 是必填块仍要写，`allowedMethods` 与 `methods` 一致；要开时的写法见 SKILL「HTTP 接口」。
-- 认证先用触发器的 `authType`（见 SKILL「HTTP 接口」），开了认证再按凭证三选一绑对应的槽（`httpBasicAuth` / `apiKey` / `jwtAuth`）。
+- 宏展开成触发器（单方法、`responseMode=WebhookNode`、CORS 关闭）+ 校验 + `Invalid` 出口的 400 应答 + 统一的 500 应答；`["api", "find"]` 自动接在校验通过之后，校验和 `find` 的 `Failure` 自动接到 500。规则见 [http.md](http.md)。
+- 中间只放真正干活的节点（查库、调接口）。返回值只是拼几个字段时直接写在应答的 `jsonValue` 里（如 `{ "code": 200, "data": { "id": "={{msg.pathParams.id}}" } }`），不要另加一个只拼字段的 JS 节点。
+- 宏用到的触发器、校验、应答节点 build 会自己补拉目录，`catalog.mjs fetch` 只列宏以外的节点（这里是 `ExecuteSqlNode`）；要改应答参数时再把 `WebhookResponseNode` 一起拉上。
+- 同一资源还要 POST（如创建订单）时再写一个宏，另起一段或另建一条流程，见第 5 节，不要按 `msg.method` 分流。
+- 认证写宏的 `auth`，凭证写在宏节点的 `credentials`（槽 `httpBasicAuth` / `apiKey` / `jwtAuth`），按凭证三选一。
 - `jsonValue` 是 `JsonExpressionInput`：整字段 `"={{msg.xxx}}"` 保留类型，要拼字符串才写 `"=[{{msg.type}}] {{msg.title}}"`。改成纯文本响应（`outputType: text`，字段 `textValue`）时变量写 `{{msg.title}}`。
-- 试跑前先测访问地址，见 [http.md](http.md)。
+- 试跑用 `trial.mjs`，会先测访问地址，再发正常和不合法两条请求，见 [http.md](http.md)。
 
 ## 3. 条件分支：必要时复制节点
 
@@ -111,12 +105,12 @@ spec 规则：
 
 ```bash
 buildify --json workflow get-draft -p "$PROJ" -w "$WF" > draft.json
+node $S/draft.mjs draft.json                     # spec 视图：节点 id、改过的参数、边；--node <id> 看某个节点的完整参数
 node $S/build.mjs edit.json --base draft.json -o flow.json --fetch      # 只改参数时加 --no-layout
-node $S/check.mjs flow.json --catalog-dir /tmp/buildify-catalog --fetch
-buildify --json workflow validate -p "$PROJ" -f flow.json > validate.json
-node $S/result.mjs validate validate.json --flow flow.json --write-errors
-buildify --json workflow save-draft -p "$PROJ" -w "$WF" -f flow.json
+node $S/ship.mjs flow.json -p "$PROJ" -w "$WF"   # check + validate + save-draft
 ```
+
+读 `draft.mjs` 的输出写 spec，不要把 `draft.json` 原文读进对话，也不要写 `node -e` 去解析它。
 
 ```json
 {
@@ -156,7 +150,7 @@ buildify --json workflow save-draft -p "$PROJ" -w "$WF" -f flow.json
 
 ## 5. 分组与多段
 
-默认不分组；特别复杂的流程按功能模块分组（见 SKILL「生成画布」）。互不连线的几段（如两个独立接口）不用写坐标，build 按 spec 里的先后自动排开。
+默认不分组；特别复杂的流程按功能模块分组（见 SKILL「写 spec」）。互不连线的几段（如两个独立接口）不用写坐标，build 按 spec 里的先后自动排开。
 
 ```json
 {
@@ -179,9 +173,11 @@ buildify --json workflow save-draft -p "$PROJ" -w "$WF" -f flow.json
 - 一个模块一个框，组内每个节点写 `parent`；模块之间照常连边，可以跨框。分支跟着所在模块，不要再加框。
 - 不要顺手给每个框加说明批注，用户要求时才加（见 [comment-node.md](comment-node.md)）。
 
+**段多时拆给子任务。** 段与段之间没有边、超过 3 段或有一段明显更长时，可以按段拆给 `generalPurpose` 子任务。主代理先定好项目、流程、服务器、凭证、方向并跑完 `catalog.mjs fetch`；每个子任务只返回本段的 spec 片段 `{ "nodes": [], "edges": [] }`（key 加段前缀避免重名，边只连本段，不加批注和分组，不调用 ship / trial / release）。主代理合并成一份 spec 再跑 build。没有子任务能力时由主代理逐段写，规则相同。
+
 ## 6. 事务与幂等：下单扣库存
 
-`POST /orders`：校验 → 一个事务里扣库存并建订单 → 按订单号回查 → 应答。规则见 SKILL「数据一致性与事务」。
+`POST /orders`：校验 → 一个事务里扣库存并建订单 → 按订单号回查 → 应答。规则见 [data-consistency.md](data-consistency.md)。这里用 `configType: "json"` 的 schema 写校验，所以手写了触发器和校验节点；用规则写时换成 http 宏即可。
 
 ```json
 {
@@ -225,13 +221,15 @@ buildify --json workflow save-draft -p "$PROJ" -w "$WF" -f flow.json
   "edges": [
     ["hook", "check"], ["check", "bad", "Invalid"], ["check", "tx"],
     ["tx", "txFail", "Failure"], ["tx", "find"], ["find", "exists"],
-    ["exists", "ok", "True"], ["exists", "noStock", "False"]
+    ["exists", "ok", "True"], ["exists", "noStock", "False"],
+    ["check", "txFail", "Failure"], ["find", "txFail", "Failure"], ["exists", "txFail", "Failure"]
   ]
 }
 ```
 
 - **两步在同一个事务里，任何一步 SQL 报错都整体回滚**（如 `order_no` 唯一索引冲突）。库存不够或订单号已存在时，第一步影响 0 行不算错误，第二步靠 `ROW_COUNT() > 0` 跟着不插入，数据不变。
 - **幂等**：同一订单号重复请求时第一步不再扣库存，回查能查到已有订单，直接返回 200。`orders.order_no` 要有唯一索引兜住并发重复，冲突时走 `Failure`，客户端重试会拿到已有订单。
-- 事务后的结果以回查为准，不要依赖事务节点的输出判断建单成没成。`find` 的 `Failure` 和 `exists` 的 `Failure` 按流程已有的失败处理接（这里省略）。
-- 扣库存、建单之外还要调支付等外部系统时，外部调用放在事务之后，按 SKILL「跨系统」先记状态再调用。
+- 事务后的结果以回查为准，不要依赖事务节点的输出判断建单成没成。
+- 手写触发器时 Failure 要自己接：这里校验、事务、回查、判断的 `Failure` 都汇到同一个 500 应答，否则调用方会挂到超时（build 会报 WARNING）。用 http 宏时这一步自动完成。
+- 扣库存、建单之外还要调支付等外部系统时，外部调用放在事务之后，按 [data-consistency.md](data-consistency.md)「跨系统」先记状态再调用。
 - 汇报「数据一致性」一行：事务范围是扣库存和建单，幂等键 `order_no`，失败返回 500 且不改数据。

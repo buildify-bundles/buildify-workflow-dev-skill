@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
-# 离线冒烟：用 fixtures/catalog 里的目录跑 build → layout --check → check → result，不调 buildify。
+# 离线冒烟：用 fixtures/catalog 里的目录跑 build → layout --check → check → result，不调真 buildify。
+# 缓存用例用 fixtures/fake-buildify.mjs 记调用次数；缓存目录指到临时目录，不动用户的缓存。
 set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"
 FIX="$HERE/fixtures"
 OUT="$(mktemp -d)"
 trap 'rm -rf "$OUT"' EXIT
+export BUILDIFY_CATALOG_DIR="$OUT/cache"
 failures=0
 
 expect() {
@@ -166,6 +168,147 @@ if [ -e "$OUT/switch-bad.json" ]; then
 else
   echo "ok   出口对不上时不写文件"
 fi
+
+if node "$HERE/build.mjs" --help | grep -q "spec 只写业务内容"; then echo "ok   build --help 打印 spec 格式"; else echo "FAIL build --help 没打印 spec 格式"; failures=$((failures + 1)); fi
+
+expect 0 "build 展开 http 宏" node "$HERE/build.mjs" "$FIX/http-spec.json" -o "$OUT/http.json" --dir "$FIX/catalog"
+if grep -q "^WARNING" "$OUT/last.log"; then
+  echo "FAIL http 宏不应有 WARNING"; sed 's/^/     /' "$OUT/last.log"; failures=$((failures + 1))
+fi
+node - "$OUT/http.json" <<'EOF' >"$OUT/assert-http.log" 2>&1
+const flow = JSON.parse(require('node:fs').readFileSync(process.argv[2], 'utf8'))
+const fail = message => { console.error(message); process.exit(1) }
+const byName = name => flow.nodes.filter(node => node.data?.name === name)
+const [hook] = byName('WebhookTriggerNode')
+const [check] = byName('ValidateNode')
+const responses = byName('WebhookResponseNode')
+if (!hook || !check || responses.length !== 3) fail('应展开成触发器 + 校验 + 三个应答（400、500、业务）')
+const p = hook.data.parameters
+if (JSON.stringify(p.methods) !== '["GET"]' || p.responseMode !== 'WebhookNode' || p.options?.cors?.enabled !== false) fail('触发器默认值不对')
+if (JSON.stringify(p.options.cors.allowedMethods) !== '["GET"]') fail('CORS allowedMethods 应与 methods 一致')
+const rules = check.data.parameters.rules
+if (rules.length !== 3 || rules[0].check !== 'required' || rules[1].pattern !== '^\\d+$' || rules[2].skipIfMissing !== true) fail(`校验规则不对: ${JSON.stringify(rules)}`)
+const invalid = responses.find(node => node.data.parameters.options?.responseStatusCode === 400)
+if (!invalid) fail('没有 400 应答')
+const edge = (from, to) => flow.edges.find(item => item.source === from.id && item.target === to.id)
+if (!edge(hook, check)) fail('触发器没接到校验')
+if (edge(check, invalid)?.data.relations[0].name !== 'Invalid') fail('Invalid 没接到 400 应答')
+const failed = responses.find(node => node.data.parameters.options?.responseStatusCode === 500)
+if (!failed) fail('没有 500 应答')
+if (edge(check, failed)?.data.relations[0].name !== 'Failure') fail('校验节点的 Failure 没接到 500 应答')
+const reply = responses.find(node => node !== invalid && node !== failed)
+if (edge(check, reply)?.data.relations[0].name !== 'Success') fail('宏 key 出发的边应接在校验通过之后')
+if (edge(hook, reply)) fail('不应从触发器直接连到应答')
+EOF
+if [ $? -eq 0 ]; then echo "ok   http 宏内容断言"; else echo "FAIL http 宏内容断言"; sed 's/^/     /' "$OUT/assert-http.log"; failures=$((failures + 1)); fi
+
+cat >"$OUT/http-js.json" <<'EOF'
+{"nodes":[
+  {"key":"api","http":{"method":"GET","path":"/echo/:id","validate":["pathParams.id"]}},
+  {"key":"work","bundle":"buildify/core","name":"JsFunctionNode","summary":"组装结果",
+   "parameters":{"code":"// 入参：msg.pathParams.id；出参：{ id }\n\n// --- 1. 返回 ---\nreturn { id: msg.pathParams.id };"}},
+  {"key":"reply","bundle":"buildify/core","name":"WebhookResponseNode","summary":"返回结果",
+   "parameters":{"responseType":"custom","outputType":"json","jsonValue":"={{msg}}"}}
+],"edges":[["api","work"],["work","reply"]]}
+EOF
+expect 0 "http 宏自动接 Failure" node "$HERE/build.mjs" "$OUT/http-js.json" -o "$OUT/http-js-out.json" --dir "$FIX/catalog" --no-layout
+if grep -q "^WARNING" "$OUT/last.log"; then
+  echo "FAIL 接好 Failure 后不应有 WARNING"; sed 's/^/     /' "$OUT/last.log"; failures=$((failures + 1))
+elif node -e "
+const flow=require('$OUT/http-js-out.json');
+const err=flow.nodes.find(n=>n.data?.parameters?.options?.responseStatusCode===500);
+const js=flow.nodes.find(n=>n.data?.name==='JsFunctionNode');
+const e=flow.edges.find(x=>x.source===js.id&&x.target===err.id);
+process.exit(e&&e.data.relations.some(r=>r.name==='Failure')?0:1)"; then
+  echo "ok   JS 的 Failure 接到了 500 应答"
+else
+  echo "FAIL JS 的 Failure 没接到 500 应答"; failures=$((failures + 1))
+fi
+sed 's/"validate":\["pathParams.id"\]/"validate":["pathParams.id"],"onError":false/' "$OUT/http-js.json" >"$OUT/http-js-off.json"
+expect 0 "onError false 时照常生成" node "$HERE/build.mjs" "$OUT/http-js-off.json" -o "$OUT/http-js-off-out.json" --dir "$FIX/catalog" --no-layout
+if grep -q "走不到 Webhook 响应" "$OUT/last.log" && grep -q "组装结果 的 Failure" "$OUT/last.log"; then
+  echo "ok   预校验提示走不到应答的出口"
+else
+  echo "FAIL 预校验没提示走不到应答的出口"; sed 's/^/     /' "$OUT/last.log"; failures=$((failures + 1))
+fi
+expect 0 "draft 看没有默认值的节点" node "$HERE/draft.mjs" "$OUT/http-js-out.json" --dir "$FIX/catalog"
+if grep -q "不在缓存里" "$OUT/last.log"; then
+  echo "FAIL JS 节点没有默认值不应算成缺缓存"; sed 's/^/     /' "$OUT/last.log"; failures=$((failures + 1))
+else
+  echo "ok   draft 不把没有默认值当成缺缓存"
+fi
+
+expect 0 "draft 输出 spec 视图" node "$HERE/draft.mjs" "$OUT/http.json" --dir "$FIX/catalog"
+if grep -q '"Invalid"\]  # 校验参数 → 参数错误' "$OUT/last.log" && grep -q 'rules = ' "$OUT/last.log" && ! grep -q 'keepOtherFields' "$OUT/last.log"; then
+  echo "ok   draft 列出边和改过的参数、省掉默认值"
+else
+  echo "FAIL draft 视图内容不对"; sed 's/^/     /' "$OUT/last.log"; failures=$((failures + 1))
+fi
+
+expect 0 "build 预校验写入风险" node "$HERE/build.mjs" "$FIX/lint-spec.json" -o "$OUT/lint.json" --dir "$FIX/catalog" --no-layout
+for needle in "没有 WHERE" "注入风险" "数据一致性" "jwtAuth"; do
+  if grep -q "$needle" "$OUT/last.log"; then echo "ok   预校验提示 $needle"; else echo "FAIL 预校验没提示 $needle"; failures=$((failures + 1)); fi
+done
+
+cat >"$OUT/deploy.json" <<'EOF'
+{"ok": true, "data": {"deployStatus": "success_with_warnings", "versionName": "v20261115-180000",
+  "summary": {"projectName": "测试项目", "workflowName": "回显", "servers": [
+    {"workerName": "mac", "remark": "", "isOnline": false, "deployStatus": "failed", "message": "connection refused"}]}}}
+EOF
+expect 0 "result deploy 有警告也算通过" node "$HERE/result.mjs" deploy "$OUT/deploy.json"
+if grep -q "! 有警告" "$OUT/last.log" && grep -q "○ 离线 | ✗ 失败 | connection refused" "$OUT/last.log"; then
+  echo "ok   发布摘要按枚举出状态符号"
+else
+  echo "FAIL 发布摘要状态符号不对"; sed 's/^/     /' "$OUT/last.log"; failures=$((failures + 1))
+fi
+
+# 缓存：假 buildify 记下每次调用，按调用次数判断复用和过期
+mkdir -p "$OUT/bin"
+printf '#!/usr/bin/env bash\nexec node "%s" "$@"\n' "$FIX/fake-buildify.mjs" >"$OUT/bin/buildify"
+chmod +x "$OUT/bin/buildify"
+export FAKE_CLI_LOG="$OUT/cli.log"
+calls() { : >"$FAKE_CLI_LOG"; PATH="$OUT/bin:$PATH" "$@" >"$OUT/last.log" 2>&1; wc -l <"$FAKE_CLI_LOG" | tr -d ' '; }
+expect_calls() {
+  local want="$1" name="$2" got
+  shift 2
+  got="$(calls "$@")"
+  if [ "$got" = "$want" ]; then echo "ok   $name"; else
+    echo "FAIL $name（调了 $got 次 buildify，期望 $want）"; sed 's/^/     /' "$FAKE_CLI_LOG" "$OUT/last.log"; failures=$((failures + 1))
+  fi
+}
+CAT="$HERE/catalog.mjs"
+expect_calls 2 "fetch 不写版本：nodes + schema" node "$CAT" fetch -b demo/pkg -n EchoNode
+expect_calls 0 "1 小时内复用最新版本" node "$CAT" fetch -b demo/pkg -n EchoNode
+node -e "const f='$OUT/cache/latest.json',fs=require('node:fs'),j=JSON.parse(fs.readFileSync(f));j['demo/pkg'].at-=2*3600e3;fs.writeFileSync(f,JSON.stringify(j))"
+expect_calls 1 "最新版本过期只重查 nodes" node "$CAT" fetch -b demo/pkg -n EchoNode
+expect_calls 2 "SNAPSHOT 首次拉取" node "$CAT" fetch -b demo/pkg@1.0.0-SNAPSHOT -n EchoNode
+expect_calls 0 "SNAPSHOT 10 分钟内复用" node "$CAT" fetch -b demo/pkg@1.0.0-SNAPSHOT -n EchoNode
+touch -t 202001010000 "$OUT/cache"/demo__pkg@1.0.0-SNAPSHOT.*
+expect_calls 2 "SNAPSHOT 过期重拉" node "$CAT" fetch -b demo/pkg@1.0.0-SNAPSHOT -n EchoNode
+expect_calls 0 "正式版本旧文件也复用" node "$CAT" fetch -b demo/pkg@2.0.0 -n EchoNode
+expect_calls 2 "--refresh 重拉" node "$CAT" fetch -b demo/pkg@2.0.0 -n EchoNode --refresh
+
+expect_calls 1 "doc 整份拉一次" node "$CAT" doc -b demo/pkg --node EchoNode
+if grep -q "回显结尾" "$OUT/last.log" && ! grep -q "其他说明" "$OUT/last.log"; then echo "ok   doc --node 只出这一节、跳过代码块里的 #"; else
+  echo "FAIL doc --node 切节不对"; sed 's/^/     /' "$OUT/last.log"; failures=$((failures + 1)); fi
+expect_calls 0 "doc 1 天内复用" node "$CAT" doc -b demo/pkg --section 硬规则
+if grep -q "规则二" "$OUT/last.log" && ! grep -q "EchoNode" "$OUT/last.log"; then echo "ok   doc --section 出整节"; else
+  echo "FAIL doc --section 切节不对"; sed 's/^/     /' "$OUT/last.log"; failures=$((failures + 1)); fi
+expect_calls 0 "doc 目录" node "$CAT" doc -b demo/pkg
+if grep -q "回显（EchoNode · Echo）（" "$OUT/last.log" && ! grep -q "代码注释" "$OUT/last.log"; then echo "ok   doc 目录带行数、不含代码块"; else
+  echo "FAIL doc 目录不对"; sed 's/^/     /' "$OUT/last.log"; failures=$((failures + 1)); fi
+expect_calls 0 "反引号标题的节点本地切出" node "$CAT" doc -b demo/pkg --node PlainNode
+if grep -q "纯名称标题说明" "$OUT/last.log" && ! grep -q "流式说明" "$OUT/last.log"; then echo "ok   PlainNode 不误中 StreamPlainNode"; else
+  echo "FAIL 反引号标题切节不对"; sed 's/^/     /' "$OUT/last.log"; failures=$((failures + 1)); fi
+expect_calls 1 "文档里没有的节点退回 --node" node "$CAT" doc -b demo/pkg --node MissingNode
+if grep -q "没有 MissingNode 这一节" "$OUT/last.log"; then echo "ok   没有的节点给出提示"; else
+  echo "FAIL 没有的节点没提示"; sed 's/^/     /' "$OUT/last.log"; failures=$((failures + 1)); fi
+
+expect 0 "cache 查看" node "$CAT" cache
+if grep -q "文档 1" "$OUT/last.log" && grep -q "最新版本 demo/pkg@2.0.0" "$OUT/last.log"; then echo "ok   cache 列出文件和最新版本"; else
+  echo "FAIL cache 输出不对"; sed 's/^/     /' "$OUT/last.log"; failures=$((failures + 1)); fi
+expect 0 "cache --clear" node "$CAT" cache --clear
+if [ -z "$(ls -A "$OUT/cache")" ]; then echo "ok   cache --clear 清空"; else echo "FAIL cache --clear 后还有文件"; failures=$((failures + 1)); fi
 
 check_update() {
   local name="$1" fixture="$2" want="$3"

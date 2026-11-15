@@ -24,7 +24,7 @@
 |---|---|
 | **使用已有** | spec 里写 `"credentials": { "<槽>": { "type", "name" } }`，`type` / `name` 必须能在 `project credentials` 里找到。`build.mjs` 会同时写进 `data.credentials.<槽>` 和 `parameters.<槽>`（与控制台一致）；手写 JSON 时两处都要写 |
 | **现在创建** | 按下面流程用 CLI 创建再绑上，不要让用户自己去控制台找入口 |
-| **使用时再选** | **不写**这个槽。校验留下的该槽 ERROR 用 `result.mjs validate --write-errors` 写入顶层 `errors` 后只 save-draft，说明用户在控制台打开流程时再选。不要试跑、不要发布，除非用户之后补上凭证再说试跑 |
+| **使用时再选** | **不写**这个槽，`ship.mjs` 加 `--credentials-later`：剩下的 ERROR 全是空着的凭证槽时照常保存（`errors` 已写进画布），并列出待选的槽；还有别的 ERROR 照样拦下。告诉用户在控制台打开流程时再选。不要试跑、不要发布，除非用户之后补上凭证再说试跑 |
 
 ## 现在创建
 

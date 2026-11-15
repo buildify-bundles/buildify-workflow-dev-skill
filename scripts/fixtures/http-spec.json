@@ -1,0 +1,9 @@
+{
+  "nodes": [
+    { "key": "api", "http": { "method": "GET", "path": "/orders/:id",
+      "validate": ["pathParams.id", ["pathParams.id", "pattern", "^\\d+$"], ["query.size", "max", 100, { "skipIfMissing": true }]] } },
+    { "key": "reply", "bundle": "buildify/core", "name": "WebhookResponseNode", "summary": "返回结果",
+      "parameters": { "responseType": "custom", "outputType": "json", "jsonValue": "={{msg.pathParams}}" } }
+  ],
+  "edges": [["api", "reply"]]
+}

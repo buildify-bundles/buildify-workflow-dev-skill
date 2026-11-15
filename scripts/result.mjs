@@ -15,6 +15,7 @@
  * 退出码：0 通过（validate 只剩环也算）；1 validate 还有 ERROR / 试跑没通过 / 发布没成功；3 文件或参数错误。
  */
 import { readFileSync, writeFileSync } from 'node:fs'
+import { printHelp } from './lib/help.mjs'
 
 const USAGE = 'usage: node scripts/result.mjs validate|test-run|deploy FILE [--flow flow.json] [--write-errors] [--node ID] [--path a.b] [--max N]\n'
 const CYCLE = /环|cycle/i
@@ -26,10 +27,7 @@ function fail(message, code = 3) {
 
 function parseArgs(argv) {
   const args = { command: argv[0], file: null, flow: null, writeErrors: false, node: null, path: null, max: 2000 }
-  if (args.command === '-h' || args.command === '--help') {
-    process.stdout.write(USAGE)
-    process.exit(0)
-  }
+  if (args.command === '-h' || args.command === '--help') printHelp(import.meta.url)
   if (!['validate', 'test-run', 'deploy'].includes(args.command)) fail(`第一个参数要是 validate、test-run 或 deploy。${USAGE}`)
   for (let i = 1; i < argv.length; i++) {
     const arg = argv[i]
@@ -173,7 +171,8 @@ function testRun(args) {
     const relations = [...new Set(outputs.map(output => output.relation).filter(Boolean))]
     process.stdout.write(`- ${nodeName(flow, item.nodeId)}: ${item.status}${relations.length ? ` → ${relations.join(', ')}` : ''}`
       + `${outputs.length > 1 ? `（${outputs.length} 条）` : ''}\n`)
-    const bad = item.status !== 'completed' || relations.some(name => /fail|error/i.test(name)) || outputs.some(output => output.payload?.error)
+    const finished = item.status === 'completed' || (data.success === true && item.status === 'running' && outputs.length > 0)
+    const bad = !finished || relations.some(name => /fail|error/i.test(name)) || outputs.some(output => output.payload?.error)
     if (bad) failed.push(item)
   }
   if (flow) {
@@ -198,26 +197,40 @@ function testRun(args) {
 
 // ---------------------------------------------------------------------------
 
+/** deployStatus 枚举 → report.md「状态映射」的标题和表格单元格。 */
+const DEPLOY_STATUS = {
+  success: ['## ✅ 已发布', '✓ 成功'],
+  success_with_warnings: ['## ⚠️ 已发布（有警告）', '! 有警告'],
+  warning: ['## ⚠️ 已发布（有警告）', '! 有警告'],
+  failed: ['## ❌ 发布失败', '✗ 失败'],
+  timeout: ['## ⏰ 发布超时', '… 超时'],
+  running: ['## 🔄 发布中', '… 部署中'],
+  pending: ['## 🔄 发布中', '… 待部署'],
+  canceled: ['## 🚫 已取消', '✗ 已取消'],
+}
+const statusCell = status => DEPLOY_STATUS[status]?.[1] ?? String(status ?? '?')
+
 function deploy(args) {
   const data = envelope(readJson(args.file, '发布结果'), 'workflow deploy ')
   const summary = data.summary ?? {}
+  const status = data.deployStatus ?? summary.deployStatus
   const lines = [
-    `deploy: ${data.deployStatusLabel ?? data.deployStatus ?? '?'}（${data.deployStatus ?? '?'}）`,
+    `deploy: ${statusCell(status)}（${status ?? '?'}）；标题用「${DEPLOY_STATUS[status]?.[0] ?? status}」`,
     `项目 ${summary.projectName ?? '?'}；流程 ${summary.workflowName ?? '?'}`,
     `版本号 ${data.versionName ?? summary.versionName ?? '?'}；发布说明 ${data.publishRemark ?? summary.publishRemark ?? '—'}`,
     `发布时间 ${data.updatedAt ?? data.createdAt ?? '?'}`,
     '服务器:',
   ]
   for (const server of summary.servers ?? []) {
-    lines.push(`- ${server.workerName ?? '?'} | ${server.remark || '无描述'} | ${server.isOnline ? '在线' : '离线'} | `
-      + `${server.deployStatusLabel ?? server.deployStatus ?? '?'}（${server.deployStatus ?? '?'}） | ${server.message || '—'}`)
+    lines.push(`- ${server.workerName ?? '?'} | ${server.remark || '无描述'} | ${server.isOnline ? '● 在线' : '○ 离线'} | `
+      + `${statusCell(server.deployStatus)} | ${server.message || '—'}`)
   }
   const credentials = summary.credentials ?? []
   lines.push(credentials.length
     ? `凭证: ${credentials.map(item => `${item.bundleName} ${item.type} ${item.label ?? item.name}`).join('；')}`
     : '凭证: 未引用访问凭证')
-  process.stdout.write(`${lines.join('\n')}\n状态符号按 report.md「状态映射」，不要把响应里的 emoji 贴进表格。\n`)
-  process.exit(data.deployStatus === 'success' || data.deployStatus === 'warning' ? 0 : 1)
+  process.stdout.write(`${lines.join('\n')}\n`)
+  process.exit(['success', 'success_with_warnings', 'warning'].includes(status) ? 0 : 1)
 }
 
 const args = parseArgs(process.argv.slice(2))

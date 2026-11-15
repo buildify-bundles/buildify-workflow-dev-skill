@@ -138,10 +138,10 @@ HTTP 接口的正文用下面这个形状，这张代替功能说明，不要两
 
 #### 访问地址
 
-- 生产：`http://{externalHost}:{httpPort}/users`
-- 测试：`http://{externalHost}:{httpPort}/@test/users`
+- 生产：`{访问地址}/users`
+- 测试：`{访问地址}/@test/users`
 ~~~~
 
 - `是否需要认证` 跟触发器 `authType`：`none` 写「否」，并删掉 `#### 请求头`。`jwtAuth` / `apiKey` / `httpBasic` 写「是」，请求头只写认证方式（如 `Authorization: Bearer Token`），不要写密钥或凭证内容。
 - 没有 Body / Query 就删掉「请求参数」和「请求示例」。没有响应字段就删掉「响应参数」和成功示例。不知道错误码就删掉「失败响应示例」和「错误码」。
-- 测试路径是在 path 前加 `/@test`，生产不加。有 `externalHost` / `httpPort` 才写完整 URL；没有就改成「完整地址 = 服务器访问地址 + 路径」，并提示到控制台「节点管理」设置。不要编造域名。
+- 测试路径是在 path 前加 `/@test`，生产不加。访问地址用 `trial.mjs` 测通的那个，或 `project workers` 里这台服务器 `accessUrls` 的第一个；都没有就改成「完整地址 = 服务器访问地址 + 路径」，并提示到控制台「节点管理」设置。不要编造域名。

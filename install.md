@@ -91,9 +91,12 @@ mkdir -p "$DEST" && curl -fsSL --max-time 60 \
 BASE=https://gitee.com/buildify/buildify-workflow-dev-skill/raw/main
 for f in SKILL.md README.md install.md version.json reference/cli.md reference/flow-json.md reference/expressions.md \
          reference/recipes.md reference/comment-node.md reference/report.md reference/missing-bundle.md \
-         reference/layout-manual.md reference/credentials.md reference/http.md \
+         reference/layout-manual.md reference/credentials.md reference/http.md reference/workspace.md \
+         reference/data-consistency.md reference/alerts.md reference/update.md \
          scripts/layout.mjs scripts/check.mjs scripts/catalog.mjs scripts/build.mjs scripts/result.mjs \
-         scripts/update-check.mjs scripts/lib/catalog-store.mjs scripts/vendor/dagre.min.js scripts/vendor/dagre.LICENSE; do
+         scripts/draft.mjs scripts/prepare.mjs scripts/ship.mjs scripts/trial.mjs scripts/release.mjs \
+         scripts/update-check.mjs scripts/lib/catalog-store.mjs scripts/lib/help.mjs scripts/lib/run.mjs \
+         scripts/vendor/dagre.min.js scripts/vendor/dagre.LICENSE; do
   mkdir -p "$DEST/$(dirname "$f")" && curl -fsSL --max-time 60 "$BASE/$f" -o "$DEST/$f" || echo "下载失败 $f"
 done
 ```
@@ -106,9 +109,12 @@ done
 grep -E '^name: buildify-workflow-dev$' "$DEST/SKILL.md"
 for f in version.json reference/cli.md reference/flow-json.md reference/expressions.md reference/recipes.md \
          reference/comment-node.md reference/report.md reference/missing-bundle.md \
-         reference/layout-manual.md reference/credentials.md reference/http.md \
+         reference/layout-manual.md reference/credentials.md reference/http.md reference/workspace.md \
+         reference/data-consistency.md reference/alerts.md reference/update.md \
          scripts/layout.mjs scripts/check.mjs scripts/catalog.mjs scripts/build.mjs scripts/result.mjs \
-         scripts/update-check.mjs scripts/lib/catalog-store.mjs scripts/vendor/dagre.min.js; do test -f "$DEST/$f" || echo "缺少 $f"; done
+         scripts/draft.mjs scripts/prepare.mjs scripts/ship.mjs scripts/trial.mjs scripts/release.mjs \
+         scripts/update-check.mjs scripts/lib/catalog-store.mjs scripts/lib/help.mjs scripts/lib/run.mjs \
+         scripts/vendor/dagre.min.js; do test -f "$DEST/$f" || echo "缺少 $f"; done
 ```
 
 有缺失就换另一个来源重取一次；还缺就把路径和 `ls` 结果告诉用户，不要假装成功。
@@ -128,7 +134,7 @@ for f in version.json reference/cli.md reference/flow-json.md reference/expressi
    ~/.local/bin/uv tool install -U buildify-cli
    ```
 
-装完 `buildify help` 确认，再看 `buildify version`：低于 **1.2.0**（没有 `project update-credential` 等凭证命令）时按第 1 条升级一次，升不上去就照常继续，只在汇报里说明改凭证、删凭证暂时用不了。找不到命令时多半是 `~/.local/bin`（Windows 是 `%USERPROFILE%\.local\bin`）不在 `PATH` 里：后续直接用绝对路径调用，汇报里提一句把它加进 `PATH`，不要替用户改 shell 配置。全部失败才把最后一条命令的输出告诉用户。
+装完 `buildify help` 确认，再看 `buildify version`：低于 **1.3.0** 时按第 1 条升级一次。升不上去就照常继续：脚本会退回旧命令（拉目录变慢、新建流程多一次保存），1.2.0 以下还没有改凭证、删凭证的命令，在汇报里说明。找不到命令时多半是 `~/.local/bin`（Windows 是 `%USERPROFILE%\.local\bin`）不在 `PATH` 里：后续直接用绝对路径调用，汇报里提一句把它加进 `PATH`，不要替用户改 shell 配置。全部失败才把最后一条命令的输出告诉用户。
 
 ## 5. buildify-cli 密钥（只有这一步要用户）
 

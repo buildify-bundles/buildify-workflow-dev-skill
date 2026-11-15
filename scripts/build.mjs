@@ -26,9 +26,25 @@
  *     "remove": ["n-旧节点", "n-a_n-b"]                        // 只在 --base 时用：删节点（连同它的边）或删边
  *   }
  *
+ * HTTP 接口用 http 宏（推荐），一条展开成「Webhook 触发器 + ValidateNode + Invalid 出口的 400 应答」：
+ *   { "key": "api", "http": { "method": "GET", "path": "/orders/:id",
+ *       "validate": ["pathParams.id",                          // 只写字段 = 必填
+ *                    ["pathParams.id", "pattern", "^\\d+$"],    // [字段, 校验, 值]；校验: required notBlank type min max minLength maxLength pattern oneOf
+ *                    ["query.size", "max", 100, { "skipIfMissing": true }]],
+ *       "auth": "none",                                       // 可选 httpBasic / apiKey / jwtAuth，凭证写在节点 credentials
+ *       "cors": { "allowedOrigins": "https://a.com" },        // 可选；不写 = 关闭跨域
+ *       "onError": false,                                     // 可选；默认把这条接口上空着的 Failure 都接到一个 500 应答，可写正文对象，false 关掉
+ *       "parameters": { "timeout": 30000 } } }                // 可选，触发器的其他参数
+ *   method 只写一个（GET 和 POST 各一个宏）；默认 responseMode=WebhookNode、CORS 关闭。确实没有入参写 "validate": []。
+ *   边从宏 key 出发（默认出口）时自动接在校验通过之后；宏生成的节点 key 是 <key>.validate、<key>.invalid、<key>.error。
+ *   宏生成的节点类型缺目录缓存时自动拉取，catalog.mjs fetch 只列宏以外的节点。
+ *
  * 脚本补齐：`n-` + nanoid 的节点 id、`{source}_{target}` 的边 id、目录里的 bundleVersion / icon / label / isTrigger、
  * 表单默认值、边上整份 relation 对象、凭证同时写进 data.credentials 与 parameters、分组框（只写标题，样式走系统默认）、多段粗略原点、
  * 顶层 direction / errors / viewport。出口名、参数键、凭证槽不在目录里时报 ERROR 并且不写文件。
+ * WARNING（都要看）：按显示条件算出的必填没填、凭证槽没绑、表达式写法、JS 下游误用 msg.output、summary 超长、
+ * SQL 用 ${} 拼请求值、UPDATE / DELETE 没有 WHERE、多个节点分别写库（要一起成功就放进 TransactionExecuteNode）、
+ * HTTP 接口有出口走不到 Webhook 响应（调用方会挂到超时）。
  *
  * --base 在已有画布上改：
  *   - 只改参数 / summary / credentials：`{ "id": "n-旧id", "parameters": {…} }`（不写 name，或 name+bundle 与画布相同）→ 旧 id 不变，parameters 按键合并。
@@ -47,9 +63,10 @@ import { writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
-  CatalogError, DEFAULT_DIR, cachedVersions, credentialSlots, fetchBundle, loadNodeFile, loadNodes,
-  parameterNames, readJsonFile, unwrap,
+  CatalogError, cachedVersions, catalogDir, credentialSlots, fetchBundle, loadNodeFile, loadNodes,
+  parameterNames, pickCachedVersion, profilesWithCache, readJsonFile, unwrap,
 } from './lib/catalog-store.mjs'
+import { printHelp } from './lib/help.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const USAGE = 'usage: node scripts/build.mjs spec.json -o flow.json [--base draft.json] [--dir DIR] [--fetch [--profile NAME]] [--no-defaults] [--no-layout]\n'
@@ -63,7 +80,7 @@ function fail(message, code = 3) {
 }
 
 function parseArgs(argv) {
-  const args = { spec: null, out: null, base: null, dir: DEFAULT_DIR, fetch: false, profile: null, defaults: true, layout: true }
+  const args = { spec: null, out: null, base: null, dir: null, fetch: false, profile: null, defaults: true, layout: true }
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]
     const value = () => {
@@ -78,14 +95,14 @@ function parseArgs(argv) {
     else if (arg === '--profile') args.profile = value()
     else if (arg === '--no-defaults') args.defaults = false
     else if (arg === '--no-layout') args.layout = false
-    else if (arg === '-h' || arg === '--help') {
-      process.stdout.write(USAGE)
-      process.exit(0)
-    } else if (!args.spec) args.spec = arg
+    else if (arg === '-h' || arg === '--help') printHelp(import.meta.url)
+    else if (!args.spec) args.spec = arg
     else fail(`多余的参数: ${arg}`)
   }
   if (!args.spec) fail(`缺少 spec 路径。${USAGE}`)
   if (!args.out) fail(`缺少 -o 输出路径。${USAGE}`)
+  args.explicitDir = Boolean(args.dir)
+  args.dir = catalogDir(args.dir, args.profile)
   return args
 }
 
@@ -126,8 +143,11 @@ function splitBundle(ref) {
   return { bundleName, version: version || null }
 }
 
-/** 定下每个包用哪个版本，必要时拉缓存，返回 lookup(bundle, version, name)。 */
-async function prepareCatalog(wanted, spec, args) {
+/**
+ * 定下每个包用哪个版本，必要时拉缓存，返回 lookup(bundle, version, name)。
+ * 只由 http 宏生成的节点类型（macroNames）缺缓存时直接拉，不要求先 catalog.mjs fetch。
+ */
+async function prepareCatalog(wanted, spec, args, macroNames = new Set()) {
   const versions = new Map()
   for (const { bundleName, version } of wanted) {
     const chosen = version || spec.versions?.[bundleName] || null
@@ -143,19 +163,23 @@ async function prepareCatalog(wanted, spec, args) {
   for (const [key, entry] of versions) {
     let version = entry.version
     if (!version) {
+      version = pickCachedVersion(args.dir, entry.bundleName)
       const cached = cachedVersions(args.dir, entry.bundleName)
-      if (cached.length === 1) version = cached[0]
-      else if (cached.length > 1) {
+      if (!version && cached.length > 1) {
         throw new CatalogError(`缓存里 ${entry.bundleName} 有多个版本（${cached.join(', ')}），在 spec.versions 或节点的 bundle 里写明版本`)
       }
     }
     const missing = name => !version
       || !loadNodeFile(args.dir, entry.bundleName, version, name, 'properties')
       || !loadNodeFile(args.dir, entry.bundleName, version, name, 'relations')
-    if ([...entry.nodes].some(missing)) {
-      if (!args.fetch) {
-        throw new CatalogError(`缓存里缺 ${entry.bundleName}${version ? `@${version}` : ''} 的 ${[...entry.nodes].filter(missing).join(', ')}，`
-          + `先 catalog.mjs fetch，或加 --fetch`)
+    const absent = [...entry.nodes].filter(missing)
+    if (absent.length) {
+      if (!args.fetch && !absent.every(name => macroNames.has(`${entry.bundleName}\0${name}`))) {
+        const profiles = !args.profile && !args.explicitDir
+          ? [...new Set(absent.flatMap(name => profilesWithCache(entry.bundleName, version, name)))]
+          : []
+        throw new CatalogError(`缓存里缺 ${entry.bundleName}${version ? `@${version}` : ''} 的 ${absent.join(', ')}，`
+          + (profiles.length ? `缓存在 --profile ${profiles.join(' / ')} 下，加上它重跑` : '先 catalog.mjs fetch，或加 --fetch'))
       }
       version = await fetchBundle({ dir: args.dir, bundleName: entry.bundleName, version, nodes: [...entry.nodes], profile: args.profile })
     }
@@ -178,6 +202,122 @@ async function prepareCatalog(wanted, spec, args) {
     }
     return cache.get(cacheKey)
   }
+}
+
+// ---------------------------------------------------------------------------
+// http 宏
+// ---------------------------------------------------------------------------
+
+const RULE_VALUE_KEY = { type: 'typeName', min: 'min', max: 'max', minLength: 'minLength', maxLength: 'maxLength', pattern: 'pattern', oneOf: 'oneOf' }
+
+/** "body.id" → 必填；[field, check, value?, extra?] → ValidateNode 一条规则；对象原样用。 */
+function validateRule(item, where, report) {
+  if (typeof item === 'string') return { field: item, check: 'required' }
+  if (isObject(item)) return clone(item)
+  if (!Array.isArray(item) || !item[0] || !item[1]) {
+    report.error(where, `validate 每项写 "字段"、[字段, 校验, 值?, {skipIfMissing}?] 或规则对象，现在是 ${JSON.stringify(item)}`)
+    return null
+  }
+  const [field, check, value, extra] = item
+  const rule = { field, check }
+  if (value !== undefined) {
+    const key = RULE_VALUE_KEY[check]
+    if (!key) report.error(where, `校验 ${check} 不带值（带值的只有 ${Object.keys(RULE_VALUE_KEY).join(' / ')}）`)
+    else rule[key] = check === 'oneOf' && Array.isArray(value) ? value.join('\n') : value
+  }
+  return isObject(extra) ? { ...rule, ...extra } : rule
+}
+
+/**
+ * 把 `{ key, http: {...} }` 展开成触发器 + ValidateNode + Invalid 的 400 应答，并补两条边。
+ * 返回 { nodes, edges, aliases }：aliases 把宏的 key 指到校验节点，后面的边从宏 key 出发（默认出口）时接在校验通过之后。
+ */
+function expandMacros(spec, report) {
+  const nodes = []
+  const edges = []
+  const aliases = new Map()
+  const types = new Set()
+  const errorTargets = []
+  for (const item of spec.nodes) {
+    if (!isObject(item) || !isObject(item.http)) {
+      nodes.push(item)
+      continue
+    }
+    const http = item.http
+    const where = `节点 ${item.key ?? '?'}（http 宏）`
+    if (!item.key) {
+      report.error('nodes', 'http 宏要写 key')
+      continue
+    }
+    const method = String(http.method ?? '').toUpperCase()
+    if (!method || !http.path) {
+      report.error(where, 'http 宏要写 method（一个方法一条触发器）和 path')
+      continue
+    }
+    if (Array.isArray(http.method)) report.error(where, 'method 只写一个；GET 和 POST 各写一个 http 宏')
+    const bundle = http.bundle ?? 'buildify/core'
+    const auth = http.auth ?? 'none'
+    const cors = isObject(http.cors)
+      ? { allowedMethods: [method], allowCredentials: false, ...http.cors, enabled: true }
+      : { enabled: false, allowedOrigins: '*', allowedMethods: [method] }
+    if (cors.enabled && (!cors.allowedOrigins || cors.allowedOrigins === '*')) {
+      report.warn(where, '开了跨域却没写具体来源：cors.allowedOrigins 写用户给的域名（每行一个），不要用 *')
+    }
+    const triggerParams = {
+      path: http.path,
+      methods: [method],
+      authType: auth,
+      responseMode: 'WebhookNode',
+      ...(http.parameters ?? {}),
+      options: { ...(http.parameters?.options ?? {}), cors },
+    }
+    const triggerName = http.trigger ?? 'WebhookTriggerNode'
+    nodes.push({
+      key: item.key, bundle, name: triggerName, summary: item.summary ?? http.summary ?? '接收请求',
+      parameters: triggerParams, credentials: item.credentials ?? http.credentials, parent: item.parent, id: item.id,
+    })
+    types.add(`${splitBundle(bundle).bundleName}\0${triggerName}`)
+    if (http.onError !== false) {
+      const errorKey = `${item.key}.error`
+      nodes.push({
+        key: errorKey, bundle, name: 'WebhookResponseNode', summary: http.errorSummary ?? '处理失败',
+        parameters: {
+          responseType: 'custom',
+          outputType: 'json',
+          jsonValue: isObject(http.onError) ? http.onError : { code: 500, message: '服务异常，请稍后重试' },
+          options: { responseStatusCode: 500 },
+        },
+        parent: item.parent,
+      })
+      types.add(`${splitBundle(bundle).bundleName}\0WebhookResponseNode`)
+      errorTargets.push({ trigger: item.key, target: errorKey })
+    }
+    const rules = (http.validate ?? []).map(rule => validateRule(rule, where, report)).filter(Boolean)
+    if (!rules.length) {
+      if (http.validate === undefined) report.warn(where, '没写 validate：接口有入参时按 http.md「默认校验入参」写；确实没有入参写 "validate": []')
+      continue
+    }
+    const validateKey = `${item.key}.validate`
+    const invalidKey = `${item.key}.invalid`
+    nodes.push({
+      key: validateKey, bundle, name: 'ValidateNode', summary: http.validateSummary ?? '校验参数',
+      parameters: { configType: 'rules', rules, keepOtherFields: true }, parent: item.parent,
+    })
+    nodes.push({
+      key: invalidKey, bundle, name: 'WebhookResponseNode', summary: http.invalidSummary ?? '参数错误',
+      parameters: {
+        responseType: 'custom',
+        outputType: 'json',
+        jsonValue: http.invalidBody ?? { code: 400, message: '参数不合法', errors: '={{msg.output.errors}}' },
+        options: { responseStatusCode: 400 },
+      },
+      parent: item.parent,
+    })
+    edges.push([item.key, validateKey], [validateKey, invalidKey, 'Invalid'])
+    aliases.set(item.key, validateKey)
+    for (const name of ['ValidateNode', 'WebhookResponseNode']) types.add(`${splitBundle(bundle).bundleName}\0${name}`)
+  }
+  return { nodes, edges, aliases, types, errorTargets }
 }
 
 // ---------------------------------------------------------------------------
@@ -219,6 +359,138 @@ function missingNested(field, value, path = field.name) {
   return missing
 }
 
+/** 按 displayOptions.show / hide 判断字段在当前参数下是否显示（显示了才校验必填）。 */
+function isVisible(field, parameters) {
+  const matches = (key, values) => {
+    const allowed = [].concat(values)
+    const current = parameters[key]
+    return Array.isArray(current) ? current.some(item => allowed.includes(item)) : allowed.includes(current)
+  }
+  const show = field.displayOptions?.show
+  const hide = field.displayOptions?.hide
+  if (isObject(show) && !Object.entries(show).every(([key, values]) => matches(key, values))) return false
+  if (isObject(hide) && Object.entries(hide).some(([key, values]) => matches(key, values))) return false
+  return true
+}
+
+function describeCondition(field) {
+  const show = field.displayOptions?.show ?? {}
+  return Object.entries(show).map(([key, values]) => `${key}=${[].concat(values).join('|')}`).join(' 且 ')
+}
+
+/** 触发器在「由 Webhook 响应节点写回」模式下才要求每条路都走到应答。 */
+function waitsForResponse(node) {
+  const data = node?.data ?? {}
+  if (!data.isTrigger) return false
+  const mode = data.parameters?.responseMode ?? (data.name === 'WebhookTriggerNode' ? 'WebhookNode' : null)
+  return mode === 'WebhookNode'
+}
+
+/**
+ * 从触发器往下走到 Webhook 响应为止，找出没有出边的出口：[{ node, exit }]。
+ * 触发器自己的出口只在 customErrorOutput 打开时算（关着时引擎直接回标准错误）。
+ */
+function unansweredExits(trigger, flow, byId, lookup) {
+  const result = []
+  const seen = new Set([trigger.id])
+  const queue = [trigger]
+  while (queue.length) {
+    const node = queue.shift()
+    if (node.data?.name === 'WebhookResponseNode') continue
+    const outgoing = flow.edges.filter(edge => edge.source === node.id)
+    const checkExits = node !== trigger || trigger.data.parameters?.customErrorOutput === true
+    if (checkExits) {
+      const { schema, custom } = relationSchema(node, lookup)
+      const used = new Set(outgoing.flatMap(edge => (edge.data?.relations ?? []).map(rel => rel.name)))
+      for (const exit of [...(schema ?? []), ...custom]) {
+        if (exit?.name && !used.has(exit.name)) result.push({ node, exit: exit.name })
+      }
+    }
+    for (const edge of outgoing) {
+      const next = byId.get(edge.target)
+      if (next && !seen.has(next.id)) {
+        seen.add(next.id)
+        queue.push(next)
+      }
+    }
+  }
+  return result
+}
+
+/** 给边加一个出口；这对节点还没有边时新建。 */
+function addRelation(flow, edgeById, source, target, relation) {
+  const id = `${source.id}_${target.id}`
+  const kept = edgeById.get(id)
+  if (kept) {
+    if (!kept.data.relations.some(item => item.name === relation.name)) kept.data.relations.push(clone(relation))
+    return
+  }
+  const created = { id, type: 'default', source: source.id, target: target.id, data: { relations: [clone(relation)] }, label: '', zIndex: 2000 }
+  flow.edges.push(created)
+  edgeById.set(id, created)
+}
+
+/** http 宏写了 onError：把这条接口上还空着的 Failure 都接到统一的 500 应答。返回没接上任何边、要删掉的应答节点 id。 */
+function wireErrorTargets(macro, keyToId, flow, byId, edgeById, lookup) {
+  const unused = []
+  for (const { trigger, target } of macro.errorTargets) {
+    const triggerNode = byId.get(keyToId.get(trigger))
+    const errorNode = byId.get(keyToId.get(target))
+    if (!triggerNode || !errorNode) continue
+    for (const { node, exit } of unansweredExits(triggerNode, flow, byId, lookup)) {
+      if (exit !== 'Failure' || node === triggerNode || node === errorNode) continue
+      const { schema, custom } = relationSchema(node, lookup)
+      const relation = [...(schema ?? []), ...custom].find(item => item.name === 'Failure')
+      if (relation) addRelation(flow, edgeById, node, errorNode, relation)
+    }
+    if (!flow.edges.some(edge => edge.target === errorNode.id)) unused.push(errorNode.id)
+  }
+  return unused
+}
+
+function lintUnanswered(flow, byId, lookup, report) {
+  for (const trigger of flow.nodes.filter(waitsForResponse)) {
+    const missing = unansweredExits(trigger, flow, byId, lookup)
+    if (!missing.length) continue
+    const p = trigger.data.parameters ?? {}
+    const api = `${[].concat(p.methods ?? []).join('/')} ${p.path ?? ''}`.trim()
+    const list = missing.map(({ node, exit }) => `${node.data?.summary || node.data?.name || node.id} 的 ${exit}`).join('、')
+    report.warn(`节点 ${trigger.id}（${trigger.data.summary || api}）`,
+      `接口 ${api} 有 ${missing.length} 个出口走不到 Webhook 响应，调用方会挂到超时（${p.timeout ?? 5000}ms）再收到 504：${list}。`
+      + '用 http 宏时 Failure 会自动接 500 应答（别写 "onError": false）；其他出口接到对应的应答节点')
+  }
+}
+
+const WRITE_SQL = /^\s*(insert|update|delete|replace|merge)\b/i
+const USER_INPUT_DOLLAR = /\$\{\s*msg\.(body|query|pathParams|headers)\b/
+
+/** 整张画布的数据写入检查：多条独立写入、UPDATE / DELETE 不带 WHERE、${} 接用户输入。 */
+function lintWrites(flow, report) {
+  const writers = []
+  for (const node of flow.nodes) {
+    const data = node.data ?? {}
+    if (!data.name || data.name === 'TransactionExecuteNode') continue
+    const sqls = Object.entries(data.parameters ?? {})
+      .filter(([key, value]) => key !== 'code' && typeof value === 'string'
+        && value.split(';').some(statement => /^\s*(select|insert|update|delete|replace|with)\b/i.test(statement)))
+      .map(([, value]) => value)
+    const where = `节点 ${node.id}（${data.summary || data.name}）`
+    for (const sql of sqls) {
+      if (USER_INPUT_DOLLAR.test(sql)) report.warn(where, 'SQL 用 ${} 拼了请求里的值，有注入风险；值一律 #{}，${} 只放表名、列名这类可信标识')
+      for (const statement of sql.split(';').filter(item => item.trim())) {
+        if (/^\s*(update|delete)\b/i.test(statement) && !/\bwhere\b/i.test(statement)) {
+          report.warn(where, `${statement.trim().split(/\s+/)[0].toUpperCase()} 没有 WHERE，会改到整张表`)
+        }
+      }
+    }
+    if (/^(Insert|Update|Delete|Upsert)/.test(data.name) || sqls.some(sql => WRITE_SQL.test(sql))) writers.push(node)
+  }
+  if (writers.length > 1) {
+    report.warn('数据一致性', `${writers.map(node => node.data.summary || node.id).join('、')} 分别写库；要一起成功时放进同一个 TransactionExecuteNode，`
+      + '否则中途失败前面的写入收不回来（见 data-consistency.md）。确实互相独立可以忽略')
+  }
+}
+
 /** 表达式写法的常见错误，按 uiComponent 判断。 */
 function lintExpressions(where, parameters, fields, report) {
   for (const [key, value] of Object.entries(parameters ?? {})) {
@@ -234,7 +506,10 @@ function lintExpressions(where, parameters, fields, report) {
       if (value.startsWith('=') || value.includes('{{')) report.warn(where, `参数 ${key} 是布尔表达式，直接写 SpEL（如 msg.output.ok == true），不要 = 前缀和 {{ }}`)
       continue
     }
-    if (value.indexOf('={{') > 0) report.warn(where, `参数 ${key} 里 = 不在第一个字符，表达式不会生效；写成 "=前缀 {{msg.x}}"`)
+    // URL 查询串里的 ip={{msg.x}} 也会拼出 ={{，整段以 = 开头时是合法插值，不算误写
+    if (!value.startsWith('=') && value.includes('={{')) {
+      report.warn(where, `参数 ${key} 里 = 不在第一个字符，表达式不会生效；写成 "=前缀 {{msg.x}}"`)
+    }
     if (ui === 'CodeEditor' && field?.typeOptions?.enableExpression === false && !/\/\/|\/\*/.test(value)) {
       report.warn(where, `参数 ${key} 的脚本没有注释，按 expressions.md「JS 节点代码」分段写中文注释`)
     }
@@ -278,17 +553,19 @@ function buildExecData(spec, lookup, report, useDefaults) {
   }
 
   for (const [name, field] of fields) {
-    if (field.displayOptions || field.uiComponent === 'CredentialSelect') continue
+    if (field.uiComponent === 'CredentialSelect' || !isVisible(field, parameters)) continue
     const value = parameters[name]
     const empty = value === undefined || value === null || value === ''
-    if (field.required && empty) report.warn(where, `必填参数 ${name}（${field.label ?? name}）还没填`)
+    const when = field.displayOptions ? `（${describeCondition(field)} 时）` : ''
+    if (field.required && empty) report.warn(where, `必填参数 ${name}（${field.label ?? name}）${when}还没填`)
     if (NESTED.has(field.uiComponent)) {
       for (const path of missingNested(field, value)) report.warn(where, `${path} 是必填（校验会报），按 catalog.mjs 摘要补上`)
     }
   }
   for (const [slot, info] of slots) {
-    if (!credentials?.[slot] && !fields.get(slot)?.displayOptions) {
-      report.warn(where, `凭证槽 ${slot}（${info.type ?? '?'}）没绑定；用户选了「使用时再选」时正常，否则按「凭证」三选一`)
+    const field = fields.get(slot)
+    if (!credentials?.[slot] && (!field || isVisible(field, parameters))) {
+      report.warn(where, `凭证槽 ${slot}（${info.type ?? '?'}）没绑定；用户选了「使用时再选」时正常（ship 加 --credentials-later），否则按「凭证」三选一`)
     }
   }
   lintExpressions(where, parameters, fields, report)
@@ -506,6 +783,9 @@ async function main() {
   const flow = base ?? { nodes: [], edges: [] }
   const baseIds = new Set(flow.nodes.map(node => node.id))
   const report = createReport()
+  const macro = expandMacros(spec, report)
+  spec.nodes = macro.nodes
+  spec.edges = [...macro.edges.filter(edge => edge.length === 2), ...(spec.edges ?? []), ...macro.edges.filter(edge => edge.length === 3)]
 
   const removed = new Set()
   const removedExec = []
@@ -544,7 +824,7 @@ async function main() {
   ]
   for (const item of execSpecs) if (!item.bundle) report.error(`节点 ${item.key ?? '?'}`, '缺少 bundle（如 "buildify/core"）')
   if (report.items.some(item => item.level === 'ERROR')) return finish(report, null, args)
-  const lookup = await prepareCatalog(wanted.filter(item => item.bundleName), spec, args)
+  const lookup = await prepareCatalog(wanted.filter(item => item.bundleName), spec, args, macro.types)
 
   const taken = new Set(flow.nodes.map(node => node.id))
   const newId = newIdFactory(taken)
@@ -660,6 +940,8 @@ async function main() {
   const edgeById = new Map(flow.edges.map(edge => [edge.id, edge]))
   for (const raw of spec.edges ?? []) {
     const edge = normalizeEdge(raw)
+    const alias = macro.aliases.get(edge.from)
+    if (alias && edge.to !== alias && (!edge.out || edge.out.every(name => name === 'Success'))) edge.from = alias
     const where = `边 ${edge.from} → ${edge.to}`
     const source = resolve(edge.from)
     const target = resolve(edge.to)
@@ -724,6 +1006,17 @@ async function main() {
         `上游是 JsFunctionNode，它的返回值就是整个 msg，没有 output 这一层；取它返回的字段写 msg.xxx，不是 msg.output.xxx`)
     }
   }
+
+  if (!report.items.some(item => item.level === 'ERROR')) {
+    const unused = new Set(wireErrorTargets(macro, keyToId, flow, byId, edgeById, lookup))
+    if (unused.size) {
+      flow.nodes = flow.nodes.filter(node => !unused.has(node.id))
+      for (let i = rows.length - 1; i >= 0; i--) if (unused.has(rows[i][1])) rows.splice(i, 1)
+      for (let i = order.length - 1; i >= 0; i--) if (unused.has(order[i])) order.splice(i, 1)
+    }
+    lintUnanswered(flow, byId, lookup, report)
+  }
+  lintWrites(flow, report)
 
   for (const node of flow.nodes) {
     if (node.type !== 'group' || baseIds.has(node.id)) continue

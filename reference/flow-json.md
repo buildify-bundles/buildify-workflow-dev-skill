@@ -130,7 +130,7 @@ MCP 自定义出口（源节点 `data.relations` 与边上都要同一份）：
 
 ## 节点分组
 
-**默认不分组。** 何时分组见 SKILL「生成画布」。分组框是布局节点：
+**默认不分组。** 何时分组见 SKILL「写 spec」。分组框是布局节点：
 
 ```json
 {
@@ -174,7 +174,7 @@ node <skill 目录>/scripts/check.mjs ./flow.json [--catalog-dir DIR] [--fetch [
 
 | 项 | 说明 |
 |---|---|
-| 目录 | `--catalog-dir` 读 `catalog.mjs` 的缓存，每个包只取和画布 `bundleVersion` 一致的那份；`--fetch` 把还缺的按画布版本拉下来。都不给时只查结构、格式和同类一致性 |
+| 目录 | 默认读 `catalog.mjs` 的缓存（同一个 `--profile` 同一份，`--catalog-dir` 可改），每个包只取和画布 `bundleVersion` 一致的那份；`--fetch` 把还缺的按画布版本拉下来。缓存不存在又没 `--fetch` 时只查结构、格式和同类一致性。平时由 `ship.mjs` 调用 |
 | 边 | 同一对 `source` + `target` 只能一条；`id` = `{source}_{target}`；`data.relations` 是非空数组；出口 `name` 不重复、在目录里存在；每个出口有 `name` 和 `label`；边自身 `label` 为空 |
 | 图标 | 执行节点必须有 `data.icon`，是图标文件名；和目录里这个节点类型的 `icon` 一致；同一类型的节点图标相同。`label` 与目录不同、`isTrigger` 不对也会报 |
 | `--fix` | 合并重复边、改正边 `id`、从目录补出口 `label`、图标、`isTrigger`，清空边自身 `label`。不动 `description`。目录里没有的出口名不改，仍报 ERROR |

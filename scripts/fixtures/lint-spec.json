@@ -1,0 +1,15 @@
+{
+  "nodes": [
+    { "key": "api", "http": { "method": "POST", "path": "/orders", "validate": ["body.id"] } },
+    { "key": "stock", "bundle": "buildify/mysql", "name": "ExecuteSqlNode", "summary": "扣库存",
+      "parameters": { "sql": "UPDATE stock SET qty = qty - 1" },
+      "credentials": { "credentialsId": { "type": "MySQLCredentials", "name": "test-db" } } },
+    { "key": "order", "bundle": "buildify/mysql", "name": "ExecuteSqlNode", "summary": "写订单",
+      "parameters": { "sql": "INSERT INTO orders(id) VALUES (${msg.body.id})" },
+      "credentials": { "credentialsId": { "type": "MySQLCredentials", "name": "test-db" } } },
+    { "key": "auth", "bundle": "buildify/core", "name": "WebhookTriggerNode", "summary": "认证接口",
+      "parameters": { "path": "/me", "methods": ["GET"], "authType": "jwtAuth",
+        "options": { "cors": { "enabled": false, "allowedOrigins": "*", "allowedMethods": ["GET"] } } } }
+  ],
+  "edges": [["api", "stock"], ["stock", "order"]]
+}
