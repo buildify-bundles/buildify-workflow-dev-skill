@@ -118,7 +118,7 @@ ship 输出的 ERROR 逐条改 spec 重跑，不要跳过校验直接试跑。**
 
 **先点选确认版本元数据。** 版本号用 `release.mjs --stamp` 的输出（确认当下的本地时间）；用户指定了就用他的，不要改成 `v1.0.0`，也不要省略。发布说明按本流程写一句。选项：按此发布（推荐）/ 发布，但不要说明 / 先不发布；要改时用户选「其他」写出来。未选择前不要发布。发布后**不要**再调 `workflow deployment` / `deployments` / `published`；失败时把服务器的 `message` 原样告诉用户。
 
-保存、试跑、发布后都用 Markdown 表汇报，模板见 [report.md](reference/report.md)：服务器用表不用列表；单元格不放彩色 emoji；只写名称不写 id；不输出节点信息（HTTP 访问地址除外）。
+保存、试跑、发布后都用 Markdown 表汇报，模板见 [report.md](reference/report.md)：服务器和凭证各成一节，服务器写名称和状态，凭证写显示名；单元格不放彩色 emoji；只写名称不写 id；不输出节点信息（HTTP 访问地址除外）。
 
 改名、改服务器、改凭证、删除、查历史：用户没提出来不要跑，确认前不执行，见 [cli.md](reference/cli.md)。
 

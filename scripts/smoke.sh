@@ -256,7 +256,7 @@ cat >"$OUT/deploy.json" <<'EOF'
     {"workerName": "mac", "remark": "", "isOnline": false, "deployStatus": "failed", "message": "connection refused"}]}}}
 EOF
 expect 0 "result deploy 有警告也算通过" node "$HERE/result.mjs" deploy "$OUT/deploy.json"
-if grep -q "! 有警告" "$OUT/last.log" && grep -q "○ 离线 | ✗ 失败 | connection refused" "$OUT/last.log"; then
+if grep -q "! 有警告" "$OUT/last.log" && grep -q "○ 离线 · ✗ 失败 | connection refused" "$OUT/last.log"; then
   echo "ok   发布摘要按枚举出状态符号"
 else
   echo "FAIL 发布摘要状态符号不对"; sed 's/^/     /' "$OUT/last.log"; failures=$((failures + 1))

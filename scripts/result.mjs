@@ -10,7 +10,7 @@
  *           （环不计入）。只剩环时提醒核对退出条件。
  * test-run：success / reason、每个节点的状态和出口、没执行到的节点；失败节点打印 msg.error 和截断后的输出。
  *           --node 打印这个节点的输出 payload，--path 取其中一段（相对 payload，如 output.body.daily）。
- * deploy：版本号、发布说明、总体状态和每台服务器的结果，直接照 report.md 画表。
+ * deploy：版本号、发布说明、总体状态；服务器一行一个（名称、状态，有 message 才附说明），凭证只打显示名。照 report.md。
  *
  * 退出码：0 通过（validate 只剩环也算）；1 validate 还有 ERROR / 试跑没通过 / 发布没成功；3 文件或参数错误。
  */
@@ -210,6 +210,22 @@ const DEPLOY_STATUS = {
 }
 const statusCell = status => DEPLOY_STATUS[status]?.[1] ?? String(status ?? '?')
 
+/** 空、破折号、字面「无描述」都不算描述，名称后不加括号。 */
+function serverTitle(server) {
+  const name = server.workerName ?? '?'
+  const remark = String(server.remark ?? '').trim()
+  if (!remark || remark === '—' || remark === '无描述') return name
+  return `${name}（${remark}）`
+}
+
+/** message 为空或就是「—」时不附说明。 */
+function serverLine(server) {
+  const status = `${server.isOnline ? '● 在线' : '○ 离线'} · ${statusCell(server.deployStatus)}`
+  const message = String(server.message ?? '').trim()
+  const head = `- ${serverTitle(server)} | ${status}`
+  return message && message !== '—' ? `${head} | ${message}` : head
+}
+
 function deploy(args) {
   const data = envelope(readJson(args.file, '发布结果'), 'workflow deploy ')
   const summary = data.summary ?? {}
@@ -221,14 +237,16 @@ function deploy(args) {
     `发布时间 ${data.updatedAt ?? data.createdAt ?? '?'}`,
     '服务器:',
   ]
-  for (const server of summary.servers ?? []) {
-    lines.push(`- ${server.workerName ?? '?'} | ${server.remark || '无描述'} | ${server.isOnline ? '● 在线' : '○ 离线'} | `
-      + `${statusCell(server.deployStatus)} | ${server.message || '—'}`)
-  }
+  for (const server of summary.servers ?? []) lines.push(serverLine(server))
   const credentials = summary.credentials ?? []
-  lines.push(credentials.length
-    ? `凭证: ${credentials.map(item => `${item.bundleName} ${item.type} ${item.label ?? item.name}`).join('；')}`
-    : '凭证: 未引用访问凭证')
+  if (!credentials.length) lines.push('凭证: 未引用访问凭证')
+  else {
+    lines.push('凭证:')
+    for (const item of credentials) {
+      const label = String(item.label ?? item.name ?? '').trim()
+      lines.push(`- ${label || '?'}`)
+    }
+  }
   process.stdout.write(`${lines.join('\n')}\n`)
   process.exit(['success', 'success_with_warnings', 'warning'].includes(status) ? 0 : 1)
 }
