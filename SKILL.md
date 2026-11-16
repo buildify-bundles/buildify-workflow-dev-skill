@@ -106,6 +106,8 @@ build 的 WARNING 都要处理：必填没填（只查当前显示的字段）�
 
 步骤 4 必须用 CLI 核实，**禁止**按名称或 recipes 臆造 `bundleName` / 节点 `name`。`catalog.mjs find` 一次给齐两三个同义词都没命中是**缺软件包**；包在但 `catalog.mjs fetch -b 包` 列表里没有是**缺节点**。缺节点时先看同包有没有 `…ApiCall` 通用调用节点，有就按厂商官方文档填参数直接用。
 
+缺**软件包**且是三方 HTTP 时，默认方案按官方「快速入门 / 常用 API」做约 3–8 个常用专用节点（含本次要用的），再加一个 `…ApiCall`。缺**节点**（包已在）时只补当前这一个，或继续用已有 `…ApiCall`，不扩成一整包。
+
 确实没有时**立刻停止**写 spec / 保存 / 试跑 / 发布，按 [missing-bundle.md](reference/missing-bundle.md) 走：说明不存在并拟默认方案 → 确认一次（用户已要求直接做就不问）→ 交给 bundle-dev 建包、开发、发布 → 回到步骤 4 重新取真实的 `bundleVersion` / `icon` / 表单 / 出口，汇报里加「新增 Bundle」。不要让用户去控制台建软件包。
 
 ## 校验（步骤 7）

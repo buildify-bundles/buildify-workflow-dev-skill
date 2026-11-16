@@ -2,7 +2,7 @@
 
 Agent Skill：用已安装的 Bundle 节点编排 Buildify 工作流。
 
-与 `buildify-bundle-dev` 分工：那个是「做节点」，这个是「用节点编流程」。编排时发现没有对应的软件包或节点，会先告诉你不存在，并给出默认方案：按 `buildify-bundle-dev` 规范、对接服务的官方文档实现，附带软件包名称和图标。你确认一次后（已经说过「直接做」就不再问），它检查本机有没有 `buildify-bundle-dev`（没有或版本旧就按 <https://buildify.cn/buildify-bundle-dev/install.md> 安装或更新），用它创建软件包、开发和发布，然后回来接着编排。不用你去控制台建软件包。
+与 `buildify-bundle-dev` 分工：那个是「做节点」，这个是「用节点编流程」。编排时发现没有对应的软件包或节点，会先告诉你不存在，并给出默认方案：按 `buildify-bundle-dev` 规范、对接服务的官方文档实现，附带软件包名称和图标。新建三方 HTTP 软件包时，默认按官方常用接口做约 3–8 个专用节点，再加一个通用调用；已有包只缺某个节点时，只补这一个，或继续用包里已有的通用调用。你确认一次后（已经说过「直接做」就不再问），它检查本机有没有 `buildify-bundle-dev`（没有或版本旧就按 <https://buildify.cn/buildify-bundle-dev/install.md> 安装或更新），用它创建软件包、开发和发布，然后回来接着编排。不用你去控制台建软件包。
 
 技能目录名是 `buildify-workflow-dev`，仓库名是 `buildify-workflow-dev-skill`。装好后根目录必须直接有 `SKILL.md`（`name: buildify-workflow-dev`）。
 
@@ -59,7 +59,7 @@ git -c protocol.version=1 clone https://gitee.com/buildify/buildify-workflow-dev
 | `reference/http.md` | HTTP 接口规则（一个方法一条流程、跨域、认证、验签回调、入参校验）、访问地址与试跑 |
 | `reference/comment-node.md` | 批注节点字段 |
 | `reference/report.md` | 保存 / 试跑 / 发布后的汇报表格与状态符号 |
-| `reference/missing-bundle.md` | 缺软件包或节点：默认方案（bundle-dev 规范 + 官方文档、软件包信息、图标）、一次确认、交给 bundle-dev 建包开发发布后回来 |
+| `reference/missing-bundle.md` | 缺软件包或节点：缺包时按官方常用接口默认约 3–8 个专用节点 + 通用调用；缺节点时只用已有通用调用，或只补当前这一个。一次确认后交给 bundle-dev 建包开发发布再回来 |
 | `install.md` | 把 `buildify-workflow-dev` 装到各客户端 skills 目录 |
 | `scripts/prepare.mjs` | 步骤 1–3 一次跑完：并行查密钥、版本、工作区、项目、服务器、凭证、同名流程；`--pin` 写 `.buildify-project` 固定项目 |
 | `scripts/catalog.mjs` | `find` 多关键词搜包；`fetch` 拉节点目录、表单、出口存进持久缓存并打印摘要（`--hints` 带字段说明）；`doc` 整份文档缓存后按 `--node` / `--section` 只打印一节；`cache [--clear]` 查看或清理缓存。`node scripts/catalog.mjs fetch -b buildify/core -n HttpRequestNode,JsFunctionNode` |
