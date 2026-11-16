@@ -15,6 +15,9 @@
  *
  * 工作区：给了 --profile 或 BUILDIFY_OPENAPI_PROFILE 就用它；否则 config profiles 按 tenantId 去重后只有一个就用它；
  * 不止一个时并行查每个工作区的 project list，选定后之后每条命令都加输出里提示的 --profile。
+ * 显示名是 key test 的 tenantName（CLI 1.4.0 起，成功后记在本机 profile 里）。输出里带「」的是显示名，对用户用它；
+ * --profile 后面仍是 profile 名，不要把显示名传进去。没有 tenantName（1.3.x，或这把密钥还没成功 key test）时退回 profile 名。
+ * 多个工作区里还没有显示名的，会再 key test 一次补上。
  *
  * --pin 把项目（和可选的默认服务器）写到当前目录的 .buildify-project，只存公开 id，不含密钥：
  *   { "workspace": "<tenantId>", "project": "p-…", "projectName": "…", "worker": "wkr-…" }
@@ -40,6 +43,27 @@ const REQUIRED_SCOPES = [
 function fail(message, code = 3) {
   process.stderr.write(`prepare: ${message}\n`)
   process.exit(code)
+}
+
+/** CLI 1.4.0 的工作区显示名。空字符串和旧版缺失都当没有。 */
+function displayName(tenantName) {
+  return typeof tenantName === 'string' ? tenantName.replace(/\s+/g, ' ').trim() : ''
+}
+
+/** 有显示名时加「」，否则用 profile 名。 */
+function workspaceLabel(tenantName, profileName) {
+  const title = displayName(tenantName)
+  return title ? `「${title}」` : (profileName || '?')
+}
+
+function disambiguate(targets) {
+  const counts = new Map()
+  for (const target of targets) counts.set(target.name, (counts.get(target.name) ?? 0) + 1)
+  for (const target of targets) {
+    if ((counts.get(target.name) ?? 0) < 2) continue
+    if (!target.profile || target.name.includes(target.profile)) continue
+    target.name = `${target.name}（${target.profile}）`
+  }
 }
 
 function parseArgs(argv) {
@@ -116,7 +140,8 @@ async function pin(args) {
   const content = { workspace: key.data.tenantId, project: project.projectId, projectName: project.projectName }
   if (args.worker) content.worker = args.worker
   writeFileSync(join(process.cwd(), PIN_FILE), `${JSON.stringify(content, null, 2)}\n`)
-  process.stdout.write(`已写入 ${join(process.cwd(), PIN_FILE)}：项目「${project.projectName}」${args.worker ? `，默认服务器 ${args.worker}` : ''}。`
+  const titled = displayName(key.data.tenantName)
+  process.stdout.write(`已写入 ${join(process.cwd(), PIN_FILE)}：${titled ? `工作区「${titled}」，` : ''}项目「${project.projectName}」${args.worker ? `，默认服务器 ${args.worker}` : ''}。`
     + '只含公开 id，可以提交到仓库。\n')
 }
 
@@ -138,7 +163,17 @@ async function main() {
     lines.unshift(`密钥: 不可用 reason=${reason}（${key.msg ?? ''}）`)
     if (reason === 'profile_required') {
       const profiles = list(key.data?.profiles ?? data(profilesPayload)?.profiles)
-      lines.push(`本机密钥: ${profiles.map(item => `${item.name}（${item.tenantId ?? '?'}，${item.keyName ?? '?'}）`).join('；')}`)
+      const named = await pool(profiles.map(item => async () => {
+        if (!item?.name || displayName(item.tenantName)) return item
+        const tested = await runCliPayload(['key', 'test'], item.name).catch(() => null)
+        const tenantName = tested?.ok !== false ? tested?.data?.tenantName : null
+        return displayName(tenantName) ? { ...item, tenantName } : item
+      }))
+      lines.push(`本机密钥: ${named.map(item => {
+        const title = displayName(item?.tenantName)
+        const head = title ? `${item?.name ?? '?'}「${title}」` : (item?.name ?? '?')
+        return `${head}（${item?.tenantId ?? '?'}，${item?.keyName ?? '?'}）`
+      }).join('；')}`)
     }
     process.stdout.write(`${lines.join('\n')}\n`)
     process.exit(2)
@@ -157,22 +192,45 @@ async function main() {
   }
   const currentProfile = args.profile ?? profiles.find(item => item.tenantId === keyData.tenantId && item.current)?.name
     ?? profiles.find(item => item.tenantId === keyData.tenantId)?.name ?? null
-  lines.unshift(`密钥: 可用（工作区 ${currentProfile ?? '?'} ${keyData.tenantId ?? ''}，密钥 ${keyData.keyName ?? '?'}）`
+  const currentStored = profiles.find(item => item.name === currentProfile)
+  const currentTitle = displayName(keyData.tenantName) || displayName(currentStored?.tenantName)
+  const keyWorkspace = currentTitle
+    ? `工作区「${currentTitle}」${currentProfile ? ` profile=${currentProfile}` : ''} ${keyData.tenantId ?? ''}`
+    : `工作区 ${currentProfile ?? '?'} ${keyData.tenantId ?? ''}`
+  lines.unshift(`密钥: 可用（${keyWorkspace.trim()}，密钥 ${keyData.keyName ?? '?'}）`
     + `${missing.length ? `；缺少权限 ${missing.join(', ')}` : ''}`)
 
   const pinned = findPin()
   const workspaceFixed = Boolean(args.profile) || workspaces.size <= 1
     || Boolean(pinned && !pinned.invalid && pinned.workspace === keyData.tenantId)
+  const notes = []
+  if (currentTitle && currentProfile) notes.push(`profile ${currentProfile}`)
+  if (workspaces.size > 1) notes.push(`本机共 ${workspaces.size} 个工作区`)
   const targets = workspaceFixed
-    ? [{ profile: args.profile, name: currentProfile, tenantId: keyData.tenantId }]
-    : [...workspaces.values()].map(item => ({ profile: item.name, name: item.name, tenantId: item.tenantId }))
-  lines.push(workspaceFixed ? `工作区: ${currentProfile ?? '默认'}${workspaces.size > 1 ? `（本机共 ${workspaces.size} 个工作区）` : ''}`
+    ? [{ profile: args.profile, name: workspaceLabel(currentTitle, currentProfile ?? '默认'), tenantId: keyData.tenantId, needsName: false }]
+    : [...workspaces.values()].map(item => {
+      const title = (item.tenantId === keyData.tenantId && currentTitle) || displayName(item.tenantName)
+      return { profile: item.name, name: title ? `「${title}」` : item.name, tenantId: item.tenantId, needsName: !title }
+    })
+  lines.push(workspaceFixed
+    ? `工作区: ${currentTitle ? `「${currentTitle}」` : (currentProfile ?? '默认')}${notes.length ? `（${notes.join('，')}）` : ''}`
     : `工作区: 本机有 ${workspaces.size} 个，还没定；下面按「工作区 / 项目」列出`)
 
+  const labelOfTenant = tenantId => {
+    const title = (tenantId === keyData.tenantId && currentTitle) || displayName(workspaces.get(tenantId)?.tenantName)
+    return workspaceLabel(title, workspaces.get(tenantId)?.name)
+  }
   const projectLists = await pool(targets.map(target => async () => {
-    const payload = await runCliPayload(['project', 'list'], target.profile).catch(error => ({ ok: false, msg: error.message }))
+    const listPromise = runCliPayload(['project', 'list'], target.profile).catch(error => ({ ok: false, msg: error.message }))
+    const namePromise = target.needsName
+      ? runCliPayload(['key', 'test'], target.profile).catch(() => null)
+      : Promise.resolve(null)
+    const [payload, tested] = await Promise.all([listPromise, namePromise])
+    const fresh = displayName(tested?.ok !== false ? tested?.data?.tenantName : null)
+    if (fresh) target.name = `「${fresh}」`
     return { target, ok: payload?.ok !== false, msg: payload?.msg, projects: list(data(payload)) }
   }))
+  disambiguate(targets)
 
   let chosen = null
   let source = ''
@@ -189,7 +247,7 @@ async function main() {
       if (!chosen) lines.push(`项目: ${pinned.file} 里的项目 ${pinned.project} 已不存在，忽略它`)
     } else if (pinned?.invalid) lines.push(`项目: ${pinned.file} 不是合法 JSON，忽略它`)
     else if (pinned && pinned.workspace !== keyData.tenantId && !chosen) {
-      lines.push(`项目: ${pinned.file} 固定的是工作区 ${pinned.workspace}，当前密钥是 ${keyData.tenantId}，忽略它`)
+      lines.push(`项目: ${pinned.file} 固定的是工作区 ${labelOfTenant(pinned.workspace)} ${pinned.workspace}，当前是 ${labelOfTenant(keyData.tenantId)} ${keyData.tenantId}，忽略它`)
     }
     if (!chosen && args.last) {
       chosen = projects.find(item => item.projectId === args.last) ?? null
@@ -206,7 +264,8 @@ async function main() {
     for (const { target, ok, msg, projects } of projectLists) {
       const prefix = workspaceFixed ? '' : `${target.name} / `
       if (!ok) {
-        lines.push(`  （工作区 ${target.name} 暂时查不到项目：${msg ?? '未知原因'}）`)
+        const where = target.name.startsWith('「') ? target.name : `工作区 ${target.name}`
+        lines.push(`  （${where} 暂时查不到项目：${msg ?? '未知原因'}）`)
         continue
       }
       for (const item of projects) {

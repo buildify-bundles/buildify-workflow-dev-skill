@@ -1,6 +1,6 @@
 # buildify CLI
 
-包：`buildify-cli`，命令：`buildify`，本文对应 **1.3.0**（`buildify version` 查看）。`buildify help` 只打印一屏命令目录，细节按主题看：`buildify help <topic>`（`config` `commands` `bundle` `project` `credentials` `workflow` `validate` `test` `deploy` `json` `exit`），只看要用的那个。流程子命令是 **`workflow`**，不是 `flow`。流程 id 的选项仍是 `--flow` / `-w`。
+包：`buildify-cli`，命令：`buildify`，本文对应 **1.4.0**（`buildify version` 查看）。`buildify help` 只打印一屏命令目录，细节按主题看：`buildify help <topic>`（`config` `commands` `bundle` `project` `credentials` `workflow` `validate` `test` `deploy` `json` `exit`），只看要用的那个。流程子命令是 **`workflow`**，不是 `flow`。流程 id 的选项仍是 `--flow` / `-w`。
 
 ## 配置与工作区
 
@@ -17,7 +17,7 @@ buildify --json config profiles
 
 `config set-key api_key` 只更新**当前** profile；还没有 profile 时才写旧的单密钥。新密钥用 `add-profile`。不要 `--api-key`，不要把明文写进仓库、`.env` 或对话。保存后只展示 `config profiles` / `config show` 的掩码。
 
-`config profiles` 返回 `current` 和每个 profile 的 `name` / `tenantId` / `keyName` / `keyPrefix` / `current`。同一个 `tenantId` 可能存了多把密钥（多个 profile），按 `tenantId` 去重才是工作区数。没有工作区显示名，对用户用 profile 名称呼。新建流程时怎么选工作区见 [workspace.md](workspace.md)「多个工作区」。`prepare.mjs` 已经并行查好并去重，一般不用自己调。
+`config profiles` 返回 `current` 和每个 profile 的 `name` / `tenantId` / `tenantName` / `keyName` / `keyPrefix` / `current`。同一个 `tenantId` 可能存了多把密钥（多个 profile），按 `tenantId` 去重才是工作区数。`tenantName` 是工作区显示名（控制台里的名称），`key test` 成功后写进本机 profile（CLI 1.4.0）。对用户用 `tenantName`；还没有（1.3.x，或这把密钥还没成功 `key test`）才用 profile 名。`--profile` 仍传 profile 名，不要传显示名。新建流程时怎么选工作区见 [workspace.md](workspace.md)「多个工作区」。`prepare.mjs` 已经并行查好并去重，一般不用自己调。
 
 选择顺序：`--api-key` / `BUILDIFY_OPENAPI_API_KEY` → `--profile` / `BUILDIFY_OPENAPI_PROFILE` → 仓库 `.buildify-workspace`（只有公开的 `tenantId`）→ `[openapi].current` → 唯一一把已存密钥。
 
@@ -26,10 +26,10 @@ buildify --json config profiles
 | reason | 做什么 |
 |---|---|
 | `missing_api_key` | 停下，按 [install.md](../install.md)「buildify-cli 密钥」的模板请用户创建并发来密钥，不要原样转发 `data.userMessage`（里面的菜单路径可能是旧的）。profile 名不必问，用工作区的简短英文名，没有就用 `default`，再用 stdin `add-profile`。 |
-| `profile_required` | 列出 `data.profiles`（name、tenantId、keyName，无密钥），问一次用哪个。之后每条命令加 `--profile <name>`。不要 `config use`，除非用户明确要改默认工作区。 |
+| `profile_required` | 列出 `data.profiles`（name、tenantName、tenantId、keyName，无密钥）。选项写显示名，问一次用哪个。之后每条命令加 `--profile <name>`（profile 名，不是显示名）。不要 `config use`，除非用户明确要改默认工作区。 |
 | `workspace_key_missing` | `.buildify-workspace` 指向的工作区本机没有密钥。向用户要**这个**工作区的密钥并 `add-profile`，不要改用别的工作区。 |
 
-项目 404 的响应带 `tenantId` 和 `profile`。先问是不是工作区错了，再决定要不要在这里建项目。
+项目 404 的响应带 `tenantId`、`tenantName` 和 `profile`。先问是不是工作区错了（对用户说 `tenantName`），再决定要不要在这里建项目。
 
 `BUILDIFY_OPENAPI_NO_PROMPT=1` 关闭交互提示。与 `buildify-publish` 共用 `~/.buildifyrc`，section 不同，密钥不会互相覆盖。
 
@@ -55,7 +55,7 @@ buildify --json config profiles
 | CLI | 用途 |
 |-----|------|
 | `health` | 探活，无需密钥 |
-| `key test` | 校验密钥并回显工作区（`tenantId` / `keyName`），`missingScopes` 是编排还缺的权限（空数组表示查、存、试跑、发布都可以） |
+| `key test` | 校验密钥并回显工作区（`tenantName` / `tenantId` / `keyName`），`missingScopes` 是编排还缺的权限（空数组表示查、存、试跑、发布都可以）。成功后把 `tenantName` 记到当前 profile |
 | `config profiles` | 已存 profile，无密钥 |
 | `bundle list [-k keyword]` | 可用 bundle。换几个同义词都查不到就停下编排，按 [missing-bundle.md](missing-bundle.md) 给默认方案、确认后交给 bundle-dev 建包开发发布再回来 |
 | `bundle nodes -b NAME [-V ver]` | 节点目录（含 `icon` / `label` / `isTrigger` / `bundleVersion`，不含参数默认值）。目录 `summary` 是类型通用简述，不要当画布文案 |

@@ -134,7 +134,7 @@ for f in version.json reference/cli.md reference/flow-json.md reference/expressi
    ~/.local/bin/uv tool install -U buildify-cli
    ```
 
-装完 `buildify help` 确认，再看 `buildify version`：低于 **1.3.0** 时按第 1 条升级一次。升不上去就照常继续：脚本会退回旧命令（拉目录变慢、新建流程多一次保存），1.2.0 以下还没有改凭证、删凭证的命令，在汇报里说明。找不到命令时多半是 `~/.local/bin`（Windows 是 `%USERPROFILE%\.local\bin`）不在 `PATH` 里：后续直接用绝对路径调用，汇报里提一句把它加进 `PATH`，不要替用户改 shell 配置。全部失败才把最后一条命令的输出告诉用户。
+装完 `buildify help` 确认，再看 `buildify version`：低于 **1.4.0** 时按第 1 条升级一次。升不上去就照常继续：1.3.x 没有工作区显示名，提问和汇报仍用 profile 名；再低时脚本会退回旧命令（拉目录变慢、新建流程多一次保存），1.2.0 以下还没有改凭证、删凭证的命令，在汇报里说明。找不到命令时多半是 `~/.local/bin`（Windows 是 `%USERPROFILE%\.local\bin`）不在 `PATH` 里：后续直接用绝对路径调用，汇报里提一句把它加进 `PATH`，不要替用户改 shell 配置。全部失败才把最后一条命令的输出告诉用户。
 
 ## 5. buildify-cli 密钥（只有这一步要用户）
 
@@ -164,7 +164,7 @@ buildify --json key test
   buildify --json key test
   ```
 
-- `data.reason=profile_required`：本机已存了多个工作区，列出 profile（名称、tenantId、密钥名，不含密钥）请用户点一个，之后命令加 `--profile`。不要 `config use`。
+- `data.reason=profile_required`：本机已存了多个工作区，列出 profile（名称、工作区显示名 `tenantName`、tenantId、密钥名，不含密钥）请用户点一个，选项写显示名。之后命令加 `--profile`（profile 名，不是显示名）。不要 `config use`。
 
 用户暂时不给密钥也算装完，汇报里写「待配置密钥」。本 CLI 不能创建密钥。不要把密钥写入 `.env`、仓库或后续回复。
 

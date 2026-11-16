@@ -9,9 +9,9 @@
 按输出里的 `reason`：
 
 - `missing_api_key`：**停止编排**，按 [install.md](../install.md)「buildify-cli 密钥」的模板请用户到 **系统设置 → API Keys → buildify-cli 密钥** 创建并发来 `keyId.secret`，不要原样转发 `data.userMessage`。profile 名用工作区的简短英文名，没有就用 `default`。收到后 `printf '%s' "$KEY" | buildify config add-profile "$PROFILE"`，再跑 prepare。
-- `profile_required`：没有默认工作区。输出里列了本机密钥（名称、tenantId、密钥名），新建流程时直接出「工作区 / 项目」题；其他场景每个 profile 一个选项，点一次。之后每条命令加 `--profile <name>`。不要 `config use`，除非用户明确要改默认工作区。
+- `profile_required`：没有默认工作区。输出里每个密钥是 `profile「显示名」（tenantId，密钥名）`，没有显示名时只有 profile 名。新建流程时直接出「工作区 / 项目」题，选项写显示名；其他场景每个工作区一个选项，点一次。之后每条命令加 `--profile <profile 名>`，不要把显示名传进去。不要 `config use`，除非用户明确要改默认工作区。
 - `workspace_key_missing`：请用户在 `.buildify-workspace` 指向的那个工作区创建密钥发来，不要改用别的工作区。
-- 输出写「缺少权限 …」：密钥有效，请用户到控制台给这把密钥补上这些权限，不要重建密钥。项目 404 且响应带 `tenantId` / `profile`：先问是不是工作区错了。
+- 输出写「缺少权限 …」：密钥有效，请用户到控制台给这把密钥补上这些权限，不要重建密钥。项目 404 且响应带 `tenantId` / `tenantName` / `profile`：先问是不是工作区错了，对用户说 `tenantName`。
 
 **密钥安全：** 不要 `--api-key`；不要写进仓库、`.env` 或 commit；不要在回复里回显明文。本 CLI 不能创建密钥。
 
@@ -26,7 +26,7 @@
 | **服务器** | 用户点名的；没点名用 `workflow workers` 里 `deleteStatus` 为 0 的那台。不要用 `workflow published` 来选 | 用户点的那台；只有一台在线时直接用；标「仓库默认」的直接用 |
 | **凭证** | 草稿里该槽已写的 `{type, name}` | 只问空槽，见 [credentials.md](credentials.md) |
 
-对用户只用名称；项目 id、workerId、hostname 留在内部。`-p` / `-w` 传 public id（`p-…` / `w-…`），不要传中文名称。
+对用户只用名称；项目 id、workerId、hostname 留在内部。工作区用显示名（prepare 输出里带「」的那个，即 `tenantName`）；profile 名只用于 `--profile`，不要念给用户。没有显示名（CLI 1.3.x，或这把密钥还没成功 `key test`）才用 profile 名。`-p` / `-w` 传 public id（`p-…` / `w-…`），不要传中文名称。
 
 **项目怎么定**（prepare 已按这个顺序判断，输出里写了来源）：用户点名（`-p`）→ 仓库 `.buildify-project` → 本次对话已确认（`--last`）→ 工作区只有一个项目。定下来后在 `workflow create` 前写一句：「将在 工作区 X / 项目 Y 创建流程「Z」，服务器 W」，用户想换再说。都不满足时出项目题，加一个选项「用这个并固定到本仓库」，用户选了就 `prepare.mjs --pin -p <项目id> [--worker <服务器id>]`。同一次对话新建第二条流程时带上 `--last <上次的项目id>`。
 
@@ -44,7 +44,7 @@
 
 prepare 按 `tenantId` 去重数工作区。工作区已定的情况：用户点名了工作区或 profile、设了 `BUILDIFY_OPENAPI_PROFILE`、仓库有 `.buildify-workspace` / `.buildify-project`、或本次对话已经在某个工作区建过流程。
 
-- 没定时 prepare 输出「工作区 / 项目」候选（每项带 `--profile`），**不要默认用 `current`**。选项超过 12 个时拆两步：先出工作区题（profile 名和项目数），选完带 `--profile` 重跑 prepare 再出项目题。
+- 没定时 prepare 输出「工作区 / 项目」候选（显示名，每项带 `--profile`），**不要默认用 `current`**。选项超过 12 个时拆两步：先出工作区题（显示名和项目数），选完带 `--profile`（profile 名）重跑 prepare 再出项目题。
 - 某个工作区查不到项目时，选项里不列它，在题干里写一句原因，不要因此停下整个提问。
 - 选定后，这条流程的每条 CLI 命令和脚本都加 `--profile <name>`（目录缓存会自动按 profile 分目录）。不要 `config use`。
 - 改已有流程：默认工作区里找不到这条流程时，按工作区并行跑 `prepare.mjs --profile P --flow <名称>` 再定；同名流程在多个工作区都有时让用户点「工作区 / 项目 / 流程」。
@@ -53,7 +53,7 @@ prepare 按 `tenantId` 去重数工作区。工作区已定的情况：用户点
 
 **切换项目**（「换到 X 项目」「建到别的项目」）：`prepare.mjs -p X`。匹配不到或有同名时让用户点选。服务器和凭证按项目隔离，之前选的**全部作废**，只把这两项再问一次。
 
-**切换工作区**（「换到 emag」）：`prepare.mjs --profile <名称>`。项目、服务器、凭证全部作废，之后的命令改用新的 `--profile`，节点目录重新拉（步骤 4），缺包按「环境里没有对应节点」处理。
+**切换工作区**（「换到 emag」）：用户说的可能是显示名或 profile 名，用 prepare 输出里对应的 profile 跑 `prepare.mjs --profile <profile 名>`。项目、服务器、凭证全部作废，之后的命令改用新的 `--profile`，节点目录重新拉（步骤 4），缺包按「环境里没有对应节点」处理。
 
 **把已有流程换到别的项目**：CLI 没有移动命令，改为复制重建，原流程不动：
 
