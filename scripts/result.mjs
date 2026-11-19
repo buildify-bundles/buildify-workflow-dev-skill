@@ -10,7 +10,8 @@
  *           （环不计入）。只剩环时提醒核对退出条件。
  * test-run：success / reason、每个节点的状态和出口、没执行到的节点；失败节点打印 msg.error 和截断后的输出。
  *           --node 打印这个节点的输出 payload，--path 取其中一段（相对 payload，如 output.body.daily）。
- * deploy：版本号、发布说明、总体状态；服务器一行一个（名称、状态，有 message 才附说明），凭证只打显示名。照 report.md。
+ * deploy：版本号、发布说明、总体状态；服务器一行一个（名称、状态，有 message 才附说明），凭证只打显示名
+ *         （displayName，1.4.x 是 label）。照 report.md。
  *
  * 退出码：0 通过（validate 只剩环也算）；1 validate 还有 ERROR / 试跑没通过 / 发布没成功；3 文件或参数错误。
  */
@@ -243,7 +244,7 @@ function deploy(args) {
   else {
     lines.push('凭证:')
     for (const item of credentials) {
-      const label = String(item.label ?? item.name ?? '').trim()
+      const label = String(item.displayName ?? item.label ?? item.name ?? '').trim()
       lines.push(`- ${label || '?'}`)
     }
   }

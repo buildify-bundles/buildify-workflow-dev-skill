@@ -263,9 +263,13 @@ function edgeLabelSize(edge, options) {
 // applyLayout.js
 // ---------------------------------------------------------------------------
 
-/** 与 DefaultNode `.flow-node` min-width / --fn-card-h 对齐；仅作未测到尺寸时的兜底，不作为间距下限。 */
-const DEFAULT_NODE_WIDTH = 248
-const DEFAULT_NODE_HEIGHT = 63
+/**
+ * 与 DefaultNode `.flow-node` 对齐：宽被 min/max-width 固定为 190，高是 --fn-card-h 58。
+ * 脚本没有画布测量，保存的 JSON 也不带 dimensions，所以直接用这个实测尺寸。
+ * 长 summary 不再把卡片撑宽。仅作未测到尺寸时的兜底，不作为间距下限。
+ */
+const DEFAULT_NODE_WIDTH = 190
+const DEFAULT_NODE_HEIGHT = 58
 
 /** 与 utils/groupNode.js 的 GROUP_PADDING_* 一致。顶边是标题高度 36 再加同样的留白 */
 const GROUP_PAD_X = 48

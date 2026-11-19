@@ -1,6 +1,6 @@
 # buildify CLI
 
-包：`buildify-cli`，命令：`buildify`，本文对应 **1.4.0**（`buildify version` 查看）。`buildify help` 只打印一屏命令目录，细节按主题看：`buildify help <topic>`（`config` `commands` `bundle` `project` `credentials` `workflow` `validate` `test` `deploy` `json` `exit`），只看要用的那个。流程子命令是 **`workflow`**，不是 `flow`。流程 id 的选项仍是 `--flow` / `-w`。
+包：`buildify-cli`，命令：`buildify`，本文对应 **1.5.0**（`buildify version` 查看）。`buildify help` 只打印一屏命令目录，细节按主题看：`buildify help <topic>`（`config` `commands` `bundle` `project` `credentials` `workflow` `validate` `test` `deploy` `json` `exit`），只看要用的那个。流程子命令是 **`workflow`**，不是 `flow`。流程 id 的选项仍是 `--flow` / `-w`。
 
 ## 配置与工作区
 
@@ -69,8 +69,8 @@ buildify --json config profiles
 | `project update -p ID -n "新名称" [--remark 简介]` | 改项目名。不传 `--remark` 就保留原简介。先问用户 |
 | `project delete -p ID` | 删项目。项目里还有流程时 HTTP 409。先问用户 |
 | `project credentials -p ID [-b bundle]` | 可引用凭证元数据，无密钥 |
-| `project create-credential -p ID -b bundle --type TYPE` | 仅当用户选「现在创建」。缺 name/label/data 时 `--json` 退出 3，`data.reason=credential_input_required`，返回默认名称和表单字段；确认后用 stdin `--file -` 创建。响应无密钥。不要 `--data` 上 argv |
-| `project update-credential -p ID --credentials cred_… [--label 显示名] [--description 说明] [--bundle-version V] [--file -]` | 改凭证的显示名、说明、绑定的软件包版本或表单。至少传一项，没传的保持原值；`--description ''` 清空说明。表单用 stdin `--file -`，只合并传入的字段，空着或掩码的密钥字段保留原值。先问用户。`--json` 不弹确认；不要 `--data` 上 argv，不要回显密钥 |
+| `project create-credential -p ID -b bundle --type TYPE` | 仅当用户选「现在创建」。缺 name、显示名或 data 时 `--json` 退出 3，`data.reason=credential_input_required`。`missing` 里显示名的键是 `displayName`，建议值在 `defaults.displayName`（1.4.x 是 `defaults.label`）。命令行仍用 `--label` 传入显示名。确认后用 stdin `--file -` 创建。响应无密钥，显示名在 `displayName`。不要 `--data` 上 argv |
+| `project update-credential -p ID --credentials cred_… [--label 显示名] [--description 说明] [--bundle-version V] [--file -]` | 改凭证的显示名、说明、绑定的软件包版本或表单。至少传一项，没传的保持原值；`--description ''` 清空说明。命令行仍是 `--label`，接口字段是 `displayName`（1.4.x 响应用 `label`）。表单用 stdin `--file -`，只合并传入的字段，空着或掩码的密钥字段保留原值。先问用户。`--json` 不弹确认；不要 `--data` 上 argv，不要回显密钥 |
 | `project delete-credential -p ID --credentials cred_…` | 软删除凭证。还有流程引用时 HTTP 409。先用 `credential-workflows` 告诉用户哪些流程在用，再确认 |
 | `project credential-workflows -p ID --credentials cred_… [--page 1] [--page-size 10]` | 分页列出引用这条凭证的流程，无密钥。权限同 `project credentials` |
 | `project workers -p ID [--online-only]` | 服务器（worker）列表：`workerId` / `workerName` / `remark` / `isOnline` / `accessUrls`（HTTP 访问地址，按优先顺序，形如 `http://1.2.3.4:8008`；空数组就问用户）。给用户看时写 **workerName — 描述 — 在线/离线**（`remark` 为空写「无描述」） |
@@ -97,6 +97,8 @@ buildify --json config profiles
 `-p` / `-w` 传 public id（`p-…` / `w-…`），不要传中文名称。
 
 `--file -` 从 stdin 读 canvas JSON 或凭证 `data`。
+
+凭证 JSON 的显示名从 CLI **1.5.0** 起是 `displayName`（`project credentials`、创建响应、发布摘要 `summary.credentials` 都是）。1.4.x 仍是 `label`。节点类型、出口和边的 `label` 没有改。创建和修改的命令行参数仍是 `--label`。
 
 ## 推荐循环
 

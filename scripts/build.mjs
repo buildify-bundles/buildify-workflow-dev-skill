@@ -569,7 +569,7 @@ function buildExecData(spec, lookup, report, useDefaults) {
     }
   }
   lintExpressions(where, parameters, fields, report)
-  if ([...String(spec.summary ?? '')].length > 8) report.warn(where, `summary「${spec.summary}」超过 8 个字，卡片会被撑宽`)
+  if ([...String(spec.summary ?? '')].length > 8) report.warn(where, `summary「${spec.summary}」超过 8 个字，卡片宽度固定，多出来的字会被截断`)
   if (!spec.summary) report.warn(where, '缺少 summary，写这个节点在本流程里的职责（≤8 字）')
 
   const data = {

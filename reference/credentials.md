@@ -29,12 +29,12 @@
 ## 现在创建
 
 1. 必须已确认项目（`-p` 必填）。
-2. 直接跑 `buildify --json project create-credential -p … -b … --type …`（不传 name/label/data），用返回的 `data.userMessage` / `defaults` / `parameters`；或用 `bundle cred-types` / `cred-properties` 取类型与表单。
+2. 直接跑 `buildify --json project create-credential -p … -b … --type …`（不传 name/label/data），用返回的 `data.userMessage` / `defaults.displayName`（1.4.x 是 `defaults.label`）/ `parameters`；或用 `bundle cred-types` / `cred-properties` 取类型与表单。
 3. 名称、显示名做成可改的默认，写进「将使用」；每个参数的中文名放进「请填写」（密钥类标明「密钥」）。密钥不能做成选项。
 4. 等用户确认。名称、显示名没改就用推荐值；参数没给齐不要创建。
 5. 用 stdin 创建，不要 `--data` 上命令行、不要把 JSON 落到仓库：
    `printf '%s' '{"host":"…"}' | buildify --json project create-credential -p "$PROJ" -b "$BUNDLE" --type "$TYPE" --name "$NAME" --label "$LABEL" --file -`
-6. 成功后只用返回的 `label` / `name` / `type` 告诉用户已创建，并写入对应槽位。密钥不要出现在回复里。
+6. 成功后只用返回的 `displayName`（1.4.x 是 `label`）/ `name` / `type` 告诉用户已创建，并写入对应槽位。密钥不要出现在回复里。命令行参数仍是 `--label`。
 
 ```markdown
 ## 创建访问凭证

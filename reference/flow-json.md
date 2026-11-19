@@ -137,7 +137,7 @@ MCP 自定义出口（源节点 `data.relations` 与边上都要同一份）：
   "id": "n-Gq3aT9xK",
   "type": "group",
   "position": { "x": 45, "y": 24 },
-  "style": { "width": "344px", "height": "195px" },
+  "style": { "width": "286px", "height": "190px" },
   "zIndex": 0,
   "data": {
     "name": "GroupNode", "label": "group", "summary": "查询", "isLayoutNode": true,

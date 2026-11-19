@@ -253,13 +253,22 @@ done
 cat >"$OUT/deploy.json" <<'EOF'
 {"ok": true, "data": {"deployStatus": "success_with_warnings", "versionName": "v20261115-180000",
   "summary": {"projectName": "测试项目", "workflowName": "回显", "servers": [
-    {"workerName": "mac", "remark": "", "isOnline": false, "deployStatus": "failed", "message": "connection refused"}]}}}
+    {"workerName": "mac", "remark": "", "isOnline": false, "deployStatus": "failed", "message": "connection refused"}],
+    "credentials": [{"name": "mysql-prod", "displayName": "生产只读"}]}}}
 EOF
 expect 0 "result deploy 有警告也算通过" node "$HERE/result.mjs" deploy "$OUT/deploy.json"
-if grep -q "! 有警告" "$OUT/last.log" && grep -q "○ 离线 · ✗ 失败 | connection refused" "$OUT/last.log"; then
-  echo "ok   发布摘要按枚举出状态符号"
+if grep -q "! 有警告" "$OUT/last.log" && grep -q "○ 离线 · ✗ 失败 | connection refused" "$OUT/last.log" && grep -q "生产只读" "$OUT/last.log"; then
+  echo "ok   发布摘要按枚举出状态符号，凭证用 displayName"
 else
   echo "FAIL 发布摘要状态符号不对"; sed 's/^/     /' "$OUT/last.log"; failures=$((failures + 1))
+fi
+cat >"$OUT/deploy-old.json" <<'EOF'
+{"ok": true, "data": {"deployStatus": "success", "versionName": "v1",
+  "summary": {"credentials": [{"name": "mysql-prod", "label": "旧显示名"}]}}}
+EOF
+expect 0 "result deploy 兼容 1.4 的 label" node "$HERE/result.mjs" deploy "$OUT/deploy-old.json"
+if grep -q "旧显示名" "$OUT/last.log"; then echo "ok   旧版凭证 label 仍能读"; else
+  echo "FAIL 旧版凭证 label 没读到"; sed 's/^/     /' "$OUT/last.log"; failures=$((failures + 1))
 fi
 
 # 缓存：假 buildify 记下每次调用，按调用次数判断复用和过期

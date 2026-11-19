@@ -299,7 +299,11 @@ async function main() {
 
   const credentials = credentialPayloads.flatMap(payload => list(data(payload)))
   lines.push(`凭证${args.bundles.length ? `（${args.bundles.join(', ')}）` : ''}: ${credentials.length ? '' : '没有'}`)
-  for (const item of credentials) lines.push(`  - ${item.bundleName} ${item.type} name=${item.name}「${item.label ?? item.name}」`)
+  for (const item of credentials) {
+    // CLI 1.5.0 起显示名是 displayName；1.4.x 仍是 label。
+    const title = item.displayName ?? item.label ?? item.name
+    lines.push(`  - ${item.bundleName} ${item.type} name=${item.name}「${title}」`)
+  }
 
   const flowList = list(data(flows))
   const shown = flowList.slice(0, args.flow ? 20 : 8)
